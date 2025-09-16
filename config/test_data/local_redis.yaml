@@ -1,0 +1,6 @@
+project: local_redis
+registry: data/redis_registry.db
+provider: local
+online_store:
+    type: redis
+    connection_string: "localhost:6379"
