@@ -1,0 +1,15 @@
+[package]
+name = "core"
+version = "0.1.0"
+edition = "2024"
+
+
+[build-dependencies]
+#protobuf-codegen = {version = "3.7.2" }
+#protoc-bin-vendored = {version = "3.2.0" }
+glob = { version = "0.3.3" }
+prost-build = "0.14.1"
+
+[dependencies]
+prost = "0.14.1"
+prost-types = "0.14.1"
