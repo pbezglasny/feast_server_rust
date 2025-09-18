@@ -72,7 +72,6 @@ pub fn serialize_key(
         let value_bytes = serialize_value(value)?;
         bytes.extend(value_bytes);
     }
-
     Ok(bytes)
 }
 

@@ -1,6 +1,6 @@
 mod feature_store;
-mod model;
 mod key_serialization;
+mod model;
 
 pub mod feast {
     pub mod types {
@@ -16,24 +16,5 @@ pub mod feast {
 
     pub mod serving {
         include!(concat!(env!("OUT_DIR"), "/feast.serving.rs"));
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::feast::core::*;
-    use prost::Message;
-    use std::fs;
-    use std::io::Read;
-
-    #[test]
-    fn test_feature_row_creation() -> Result<(), Box<dyn std::error::Error>> {
-        let registry_file = "/Users/pavel/work/rust/feast_rust/core/src/registry.pb";
-        let mut file = fs::File::open(registry_file)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
-        let registry = Registry::decode(&*buf);
-        println!("Default Registry: {:?}", registry);
-        Ok(())
     }
 }
