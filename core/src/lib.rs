@@ -1,3 +1,7 @@
+mod feature_store;
+mod model;
+mod key_serialization;
+
 pub mod feast {
     pub mod types {
         include!(concat!(env!("OUT_DIR"), "/feast.types.rs"));
@@ -8,6 +12,10 @@ pub mod feast {
 
     pub mod registry {
         include!(concat!(env!("OUT_DIR"), "/feast.registry.rs"));
+    }
+
+    pub mod serving {
+        include!(concat!(env!("OUT_DIR"), "/feast.serving.rs"));
     }
 }
 
@@ -20,7 +28,7 @@ pub mod tests {
 
     #[test]
     fn test_feature_row_creation() -> Result<(), Box<dyn std::error::Error>> {
-        let registry_file = "/Users/pavel/work/rust/feast_rust/feast-protos/src/registry.pb";
+        let registry_file = "/Users/pavel/work/rust/feast_rust/core/src/registry.pb";
         let mut file = fs::File::open(registry_file)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
