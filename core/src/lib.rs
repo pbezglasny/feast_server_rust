@@ -1,6 +1,6 @@
 mod feature_store;
 mod key_serialization;
-mod model;
+mod config;
 
 pub mod feast {
     pub mod types {

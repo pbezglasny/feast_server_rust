@@ -2,7 +2,7 @@ use crate::feast::types::EntityKey;
 use crate::feast::types::Value;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum;
-use crate::model::EntityKeySerializationVersion;
+use crate::config::EntityKeySerializationVersion;
 use std::collections::HashMap;
 
 fn serialize_value(value: &Value) -> Result<Vec<u8>, String> {
