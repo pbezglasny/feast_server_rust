@@ -42,6 +42,13 @@ pub enum OnlineStoreConfig {
     Redis { connection_string: String },
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum EntityKeySerializationVersion {
+    V1,
+    V2,
+    V3,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RepoConfig {
     pub project: String,
@@ -49,6 +56,7 @@ pub struct RepoConfig {
     pub provider: Provider,
     pub registry: RegistryConfig,
     pub online_store: OnlineStoreConfig,
+    pub entity_key_serialization_version: EntityKeySerializationVersion,
 }
 
 impl TryFrom<&Yaml<'_>> for RegistryConfig {
@@ -211,12 +219,25 @@ impl TryFrom<&Yaml<'_>> for RepoConfig {
             .get(&Yaml::Value(Scalar::String("online_store".into())))
             .ok_or("Missing 'online_store' field")?;
         let online_store = OnlineStoreConfig::try_from(online_store_yaml)?;
+        let entity_key_serialization_num = mapping
+            .get(&Yaml::Value(Scalar::String(
+                "entity_key_serialization_version".into(),
+            )))
+            .and_then(|v| v.as_integer())
+            .unwrap_or(2);
+        let entity_key_serialization_version = match entity_key_serialization_num {
+            1 => EntityKeySerializationVersion::V1,
+            2 => EntityKeySerializationVersion::V2,
+            3 => EntityKeySerializationVersion::V3,
+            _ => return Err("Unsupported entity_key_serialization_version".into()),
+        };
         Ok(RepoConfig {
             project,
             project_description,
             provider,
             registry,
             online_store,
+            entity_key_serialization_version,
         })
     }
 }
@@ -235,7 +256,6 @@ mod tests {
         let yaml_str = fs::read_to_string(config_path).unwrap();
         let conf = Yaml::load_from_str(&yaml_str).unwrap();
         let repo_config = RepoConfig::try_from(&conf[0])?;
-        println!("{:#?}", repo_config);
         assert_eq!(repo_config.project, "local_sqlite");
         let mut expected_registry = RegistryConfig::default();
         expected_registry.registry_type = RegistryType::File;
@@ -245,6 +265,10 @@ mod tests {
             path: "data/online_store.db".to_string(),
         };
         assert_eq!(repo_config.online_store, expected_online_store);
+        assert_eq!(
+            repo_config.entity_key_serialization_version,
+            EntityKeySerializationVersion::V2
+        );
         Ok(())
     }
 
@@ -255,7 +279,6 @@ mod tests {
         let yaml_str = fs::read_to_string(config_path).unwrap();
         let conf = Yaml::load_from_str(&yaml_str).unwrap();
         let repo_config = RepoConfig::try_from(&conf[0])?;
-        println!("{:#?}", repo_config);
         assert_eq!(repo_config.project, "local_redis");
         let mut expected_registry = RegistryConfig::default();
         expected_registry.registry_type = RegistryType::File;
@@ -265,6 +288,10 @@ mod tests {
             connection_string: "localhost:6379".to_string(),
         };
         assert_eq!(repo_config.online_store, expected_online_store);
+        assert_eq!(
+            repo_config.entity_key_serialization_version,
+            EntityKeySerializationVersion::V3
+        );
         Ok(())
     }
 }
