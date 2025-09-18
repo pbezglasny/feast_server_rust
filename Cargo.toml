@@ -7,7 +7,6 @@ edition = "2024"
 
 [workspace]
 members = [
-    "config",
     "core"
 ]
 resolver = "2"
