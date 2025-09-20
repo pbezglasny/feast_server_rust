@@ -31,6 +31,7 @@ pub struct GetOnlineFeatureResponse {
     pub field_values: HashMap<String, Vec<Option<String>>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub name: String,
     pub join_key: String,
@@ -96,6 +97,7 @@ pub struct FeatureService {
     pub logging_config: Option<LoggingConfig>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FeatureRegistry {
     pub entities: HashMap<String, Entity>,
     pub feature_views: HashMap<String, FeatureView>,
@@ -108,11 +110,21 @@ pub enum RequestedFeatures<'a> {
     FeatureService(&'a str),
 }
 
-impl TryFrom<&EntityProto> for Entity {
+impl<'a> RequestedFeatures<'a> {
+    pub fn from_request(get_online_feature_request: &'a GetOnlineFeatureRequest) -> Self {
+        if let Some(feature_service) = &get_online_feature_request.feature_service {
+            RequestedFeatures::FeatureService(feature_service)
+        } else {
+            RequestedFeatures::FeatureNames(&get_online_feature_request.features)
+        }
+    }
+}
+
+impl TryFrom<EntityProto> for Entity {
     type Error = String;
 
-    fn try_from(entity_proto: &EntityProto) -> Result<Self, String> {
-        let specs = entity_proto.spec.as_ref().ok_or("Missing entity specs")?;
+    fn try_from(entity_proto: EntityProto) -> Result<Self, String> {
+        let specs = entity_proto.spec.ok_or("Missing entity specs")?;
         let value_type = ValueTypeEnum::try_from(specs.value_type).map_err(|e| {
             format!(
                 "Invalid value type {} for entity {}: {}",
@@ -120,17 +132,17 @@ impl TryFrom<&EntityProto> for Entity {
             )
         })?;
         Ok(Entity {
-            name: specs.name.clone(),
-            join_key: specs.join_key.clone(),
+            name: specs.name,
+            join_key: specs.join_key,
             value_type,
         })
     }
 }
 
-impl TryFrom<&FeatureSpecV2Proto> for Field {
+impl TryFrom<FeatureSpecV2Proto> for Field {
     type Error = String;
 
-    fn try_from(feature_spec_proto: &FeatureSpecV2Proto) -> Result<Self, String> {
+    fn try_from(feature_spec_proto: FeatureSpecV2Proto) -> Result<Self, String> {
         let value_type = ValueTypeEnum::try_from(feature_spec_proto.value_type).map_err(|e| {
             format!(
                 "Invalid value type {} for feature {}: {}",
@@ -138,75 +150,75 @@ impl TryFrom<&FeatureSpecV2Proto> for Field {
             )
         })?;
         Ok(Field {
-            name: feature_spec_proto.name.clone(),
+            name: feature_spec_proto.name,
             value_type,
         })
     }
 }
 
-impl TryFrom<&FeatureViewProjectionProto> for FeatureProjection {
+impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
     type Error = String;
-    fn try_from(projection_proto: &FeatureViewProjectionProto) -> Result<Self, String> {
+    fn try_from(projection_proto: FeatureViewProjectionProto) -> Result<Self, String> {
         let features: Result<Vec<Field>, String> = projection_proto
             .feature_columns
-            .iter()
+            .into_iter()
             .map(|f| Field::try_from(f))
             .collect();
         Ok(FeatureProjection {
-            name: projection_proto.feature_view_name.clone(),
-            name_alias: Some(projection_proto.feature_view_name_alias.clone()),
+            name: projection_proto.feature_view_name,
+            name_alias: Some(projection_proto.feature_view_name_alias),
             features: features?,
-            join_key_map: projection_proto.join_key_map.clone(),
+            join_key_map: projection_proto.join_key_map,
         })
     }
 }
 
-impl TryFrom<&FeatureViewProto> for FeatureView {
+impl TryFrom<FeatureViewProto> for FeatureView {
     type Error = String;
-    fn try_from(feature_view_proto: &FeatureViewProto) -> Result<Self, String> {
+    fn try_from(feature_view_proto: FeatureViewProto) -> Result<Self, String> {
         let spec = feature_view_proto
             .spec
-            .as_ref()
             .ok_or("Missing feature view value")?;
-        let features: Result<Vec<Field>, String> =
-            spec.features.iter().map(|f| Field::try_from(f)).collect();
+        let features: Result<Vec<Field>, String> = spec
+            .features
+            .into_iter()
+            .map(|f| Field::try_from(f))
+            .collect();
         Ok(FeatureView {
-            name: spec.name.clone(),
+            name: spec.name,
             features: features?,
             ttl: spec
                 .ttl
                 .as_ref()
                 .map(|d| prost_duration_to_std(d))
                 .unwrap_or(Duration::from_secs(0)),
-            entity_names: spec.entities.clone(),
+            entity_names: spec.entities,
             entity_columns: spec
                 .entity_columns
-                .iter()
-                .map(|col| col.name.clone())
+                .into_iter()
+                .map(|col| col.name)
                 .collect(),
         })
     }
 }
 
-impl TryFrom<&FeatureServiceProto> for FeatureService {
+impl TryFrom<FeatureServiceProto> for FeatureService {
     type Error = String;
-    fn try_from(feature_service_proto: &FeatureServiceProto) -> Result<Self, String> {
+    fn try_from(feature_service_proto: FeatureServiceProto) -> Result<Self, String> {
         let spec = feature_service_proto
             .spec
-            .as_ref()
             .ok_or("Missing feature service specs")?;
         let metadata = feature_service_proto
             .meta
-            .as_ref()
             .ok_or("Missing feature service metadata")?;
         let projections: Result<Vec<FeatureProjection>, String> = spec
             .features
-            .iter()
+            .into_iter()
             .map(|p| FeatureProjection::try_from(p))
             .collect();
         Ok(FeatureService {
-            name: spec.name.clone(),
-            project: spec.project.clone(),
+            name: spec.name,
+            project: spec.project,
             created_timestamp: metadata
                 .created_timestamp
                 .map(|ts| prost_timestamp_to_system_time(&ts)),
@@ -219,12 +231,12 @@ impl TryFrom<&FeatureServiceProto> for FeatureService {
     }
 }
 
-impl TryFrom<&RegistryProto> for FeatureRegistry {
+impl TryFrom<RegistryProto> for FeatureRegistry {
     type Error = String;
-    fn try_from(registry_proto: &RegistryProto) -> Result<Self, String> {
+    fn try_from(registry_proto: RegistryProto) -> Result<Self, String> {
         let entities: Result<HashMap<String, Entity>, String> = registry_proto
             .entities
-            .iter()
+            .into_iter()
             .map(|e| {
                 let entity = Entity::try_from(e)?;
                 Ok((entity.name.clone(), entity))
@@ -232,7 +244,7 @@ impl TryFrom<&RegistryProto> for FeatureRegistry {
             .collect();
         let feature_views: Result<HashMap<String, FeatureView>, String> = registry_proto
             .feature_views
-            .iter()
+            .into_iter()
             .map(|fv| {
                 let feature_view = FeatureView::try_from(fv)?;
                 Ok((feature_view.name.clone(), feature_view))
@@ -240,7 +252,7 @@ impl TryFrom<&RegistryProto> for FeatureRegistry {
             .collect();
         let feature_services: Result<HashMap<String, FeatureService>, String> = registry_proto
             .feature_services
-            .iter()
+            .into_iter()
             .map(|fs| {
                 let feature_service = FeatureService::try_from(fs)?;
                 Ok((feature_service.name.clone(), feature_service))
