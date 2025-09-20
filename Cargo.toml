@@ -1,6 +1,6 @@
 [workspace.package]
 name = "feast_rust"
-description = "Online feature store for machine learning implemented in Rust"
+description = "Feat's feature server implemented in Rust"
 version = "0.1.0"
 edition = "2024"
 

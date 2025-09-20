@@ -1,7 +1,9 @@
+use crate::feast::core::Entity as EntityProto;
 use crate::feast::core::FeatureService as FeatureServiceProto;
 use crate::feast::core::FeatureSpecV2 as FeatureSpecV2Proto;
 use crate::feast::core::FeatureView as FeatureViewProto;
 use crate::feast::core::FeatureViewProjection as FeatureViewProjectionProto;
+use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
@@ -11,8 +13,14 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EntityId {
+    String(String),
+    Int(i64),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetOnlineFeatureRequest {
-    pub entities: HashMap<String, Vec<String>>,
+    pub entities: HashMap<String, Vec<EntityId>>,
     pub feature_service: Option<String>,
     pub features: Vec<String>,
     pub full_feature_names: Option<bool>,
@@ -21,6 +29,12 @@ pub struct GetOnlineFeatureRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetOnlineFeatureResponse {
     pub field_values: HashMap<String, Vec<Option<String>>>,
+}
+
+pub struct Entity {
+    pub name: String,
+    pub join_key: String,
+    pub value_type: ValueTypeEnum,
 }
 
 impl Serialize for ValueTypeEnum {
@@ -80,6 +94,37 @@ pub struct FeatureService {
     pub last_updated_timestamp: Option<SystemTime>,
     pub projections: Vec<FeatureProjection>,
     pub logging_config: Option<LoggingConfig>,
+}
+
+pub struct FeatureRegistry {
+    pub entities: HashMap<String, Entity>,
+    pub feature_views: HashMap<String, FeatureView>,
+    pub feature_services: HashMap<String, FeatureService>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RequestedFeatures<'a> {
+    FeatureNames(&'a Vec<String>),
+    FeatureService(&'a str),
+}
+
+impl TryFrom<&EntityProto> for Entity {
+    type Error = String;
+
+    fn try_from(entity_proto: &EntityProto) -> Result<Self, String> {
+        let specs = entity_proto.spec.as_ref().ok_or("Missing entity specs")?;
+        let value_type = ValueTypeEnum::try_from(specs.value_type).map_err(|e| {
+            format!(
+                "Invalid value type {} for entity {}: {}",
+                specs.value_type, specs.name, e
+            )
+        })?;
+        Ok(Entity {
+            name: specs.name.clone(),
+            join_key: specs.join_key.clone(),
+            value_type,
+        })
+    }
 }
 
 impl TryFrom<&FeatureSpecV2Proto> for Field {
@@ -170,6 +215,41 @@ impl TryFrom<&FeatureServiceProto> for FeatureService {
                 .map(|ts| prost_timestamp_to_system_time(&ts)),
             projections: projections?,
             logging_config: None,
+        })
+    }
+}
+
+impl TryFrom<&RegistryProto> for FeatureRegistry {
+    type Error = String;
+    fn try_from(registry_proto: &RegistryProto) -> Result<Self, String> {
+        let entities: Result<HashMap<String, Entity>, String> = registry_proto
+            .entities
+            .iter()
+            .map(|e| {
+                let entity = Entity::try_from(e)?;
+                Ok((entity.name.clone(), entity))
+            })
+            .collect();
+        let feature_views: Result<HashMap<String, FeatureView>, String> = registry_proto
+            .feature_views
+            .iter()
+            .map(|fv| {
+                let feature_view = FeatureView::try_from(fv)?;
+                Ok((feature_view.name.clone(), feature_view))
+            })
+            .collect();
+        let feature_services: Result<HashMap<String, FeatureService>, String> = registry_proto
+            .feature_services
+            .iter()
+            .map(|fs| {
+                let feature_service = FeatureService::try_from(fs)?;
+                Ok((feature_service.name.clone(), feature_service))
+            })
+            .collect();
+        Ok(FeatureRegistry {
+            entities: entities?,
+            feature_views: feature_views?,
+            feature_services: feature_services?,
         })
     }
 }
