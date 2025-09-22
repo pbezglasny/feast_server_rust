@@ -5,6 +5,7 @@ use crate::feast::core::FeatureView as FeatureViewProto;
 use crate::feast::core::FeatureViewProjection as FeatureViewProjectionProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
+use crate::feast::types::{Value, value_type};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use serde::{Deserialize, Serialize};
@@ -12,10 +13,34 @@ use std::collections::HashMap;
 use std::time::Duration;
 use std::time::SystemTime;
 
+pub const DUMMY_ENTITY_NAME: &'static str = "";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EntityId {
     String(String),
     Int(i64),
+}
+
+impl EntityId {
+    pub fn to_proto_value(&self, output_type: value_type::Enum) -> Result<Value, String> {
+        match self {
+            EntityId::String(s) => Ok(Value {
+                val: Some(crate::feast::types::value::Val::StringVal(s.clone())),
+            }),
+            EntityId::Int(i) => match output_type {
+                value_type::Enum::Int32 => Ok(Value {
+                    val: Some(crate::feast::types::value::Val::Int32Val(*i as i32)),
+                }),
+                value_type::Enum::Int64 => Ok(Value {
+                    val: Some(crate::feast::types::value::Val::Int64Val(*i)),
+                }),
+                value_type::Enum::String => Ok(Value {
+                    val: Some(crate::feast::types::value::Val::StringVal(i.to_string())),
+                }),
+                _ => Err("Unsupported type convertion for number type".to_string()),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,14 +97,13 @@ pub struct FeatureProjection {
     join_key_map: HashMap<String, String>,
 }
 
-// TODO Think about using references for entity names and columns instead of cloning
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FeatureView {
     pub name: String,
     pub features: Vec<Field>,
     pub ttl: Duration,
     pub entity_names: Vec<String>,
-    pub entity_columns: Vec<String>,
+    pub entity_columns: Vec<Field>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -196,7 +220,10 @@ impl TryFrom<FeatureViewProto> for FeatureView {
             entity_columns: spec
                 .entity_columns
                 .into_iter()
-                .map(|col| col.name)
+                .map(|col| Field {
+                    name: col.name,
+                    value_type: ValueTypeEnum::try_from(col.value_type).unwrap(),
+                })
                 .collect(),
         })
     }

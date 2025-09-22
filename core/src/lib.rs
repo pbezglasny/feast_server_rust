@@ -4,6 +4,9 @@ mod config;
 mod model;
 mod util;
 
+mod onlinestore;
+mod feature_registry;
+
 pub mod feast {
     pub mod types {
         include!(concat!(env!("OUT_DIR"), "/feast.types.rs"));
