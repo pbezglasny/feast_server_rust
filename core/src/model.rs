@@ -10,8 +10,11 @@ use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
 use anyhow::{Error, anyhow};
-use serde::{Deserialize, Serialize};
+use serde::ser::Error as SerdeError;
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Formatter;
 use std::time::Duration;
 use std::time::SystemTime;
 
@@ -54,11 +57,68 @@ pub struct GetOnlineFeatureRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetOnlineFeatureResponseMetadata {
+    feature_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FeatureStatus {
+    Invalid,
+    Present,
+    NullValue,
+    NotFound,
+    OutsideMaxAge,
+}
+
+pub struct ValueWrapper(Value);
+
+impl Serialize for ValueWrapper {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self.0.val {
+            None => serializer.serialize_none(),
+            Some(v) => match v {
+                crate::feast::types::value::Val::Int32Val(i) => serializer.serialize_i32(*i),
+                crate::feast::types::value::Val::Int64Val(i) => serializer.serialize_i64(*i),
+                crate::feast::types::value::Val::FloatVal(f) => serializer.serialize_f32(*f),
+                crate::feast::types::value::Val::DoubleVal(d) => serializer.serialize_f64(*d),
+                crate::feast::types::value::Val::StringVal(s) => serializer.serialize_str(s),
+                crate::feast::types::value::Val::BytesVal(b) => serializer.serialize_bytes(b),
+                crate::feast::types::value::Val::BoolVal(b) => serializer.serialize_bool(*b),
+                crate::feast::types::value::Val::UnixTimestampVal(ts) => {
+                    serializer.serialize_i64(*ts)
+                }
+                other => Err(S::Error::custom(format!(
+                    "unsupported value variant: {:?}",
+                    other
+                ))),
+            },
+        }
+    }
+}
+
+impl fmt::Debug for ValueWrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct FeatureResults {
+    values: Vec<ValueWrapper>,
+    statuses: Vec<FeatureStatus>,
+    event_timestamps: SystemTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetOnlineFeatureResponse {
     pub field_values: HashMap<String, Vec<Option<String>>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Entity {
     pub name: String,
     pub join_key: String,
@@ -85,13 +145,13 @@ impl<'de> Deserialize<'de> for ValueTypeEnum {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct Field {
     pub name: String,
     pub value_type: ValueTypeEnum,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct FeatureProjection {
     pub name: String,
     pub name_alias: Option<String>,
@@ -99,7 +159,7 @@ pub struct FeatureProjection {
     join_key_map: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct FeatureView {
     pub name: String,
     pub features: Vec<Field>,
@@ -108,12 +168,12 @@ pub struct FeatureView {
     pub entity_columns: Vec<Field>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct LoggingConfig {
     pub sample_rate: f32,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct FeatureService {
     pub name: String,
     pub project: String,
@@ -123,7 +183,7 @@ pub struct FeatureService {
     pub logging_config: Option<LoggingConfig>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct FeatureRegistry {
     pub entities: HashMap<String, Entity>,
     pub feature_views: HashMap<String, FeatureView>,
