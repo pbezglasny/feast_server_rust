@@ -1,5 +1,6 @@
 use crate::feature_store::RequestedFeature;
 use crate::model::{FeatureRegistry, FeatureView, RequestedFeatures};
+use anyhow::Result;
 use prost::Message;
 use std::collections::HashMap;
 use std::fs;
@@ -10,12 +11,12 @@ struct FeatureRegistryProto {
 }
 
 impl FeatureRegistryProto {
-    fn from_proto(proto_registry: crate::feast::core::Registry) -> Result<Self, String> {
+    fn from_proto(proto_registry: crate::feast::core::Registry) -> Result<Self> {
         let registry = FeatureRegistry::try_from(proto_registry)?;
         Ok(Self { registry })
     }
 
-    fn from_path(registry_file_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    fn from_path(registry_file_path: &str) -> Result<Self> {
         let mut file = fs::File::open(registry_file_path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -58,9 +59,10 @@ impl FeatureRegistryProto {
 mod tests {
     use crate::feature_registry::FeatureRegistryProto;
     use crate::feature_store::RequestedFeature;
+    use anyhow::Result;
 
     #[test]
-    fn create_feature_registry() -> Result<(), Box<dyn std::error::Error>> {
+    fn create_feature_registry() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
         let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;

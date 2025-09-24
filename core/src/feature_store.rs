@@ -1,5 +1,6 @@
 use crate::feast::types::{EntityKey, value_type};
 use crate::model::{EntityId, FeatureView};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -31,9 +32,9 @@ impl<'a> Hash for RequestedFeatureWithTTL<'a> {
 }
 
 impl RequestedFeature {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    pub fn from_str(s: &str) -> Result<Self> {
         if s.is_empty() {
-            return Err("Empty feature string".to_string());
+            return Err(anyhow!("Empty feature string"));
         }
         if let Some(idx) = s.find(':') {
             let (fv_name, f_name) = s.split_at(idx);
@@ -53,7 +54,7 @@ impl RequestedFeature {
 fn feature_views_to_keys<'a>(
     feature_views: &'a HashMap<&RequestedFeature, &FeatureView>,
     requested_entity_keys: HashMap<String, Vec<EntityId>>,
-) -> HashMap<&'a RequestedFeature, Result<Vec<EntityKey>, String>> {
+) -> HashMap<&'a RequestedFeature, Result<Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
     let mut entity_key_type: HashMap<(&str, &str), value_type::Enum> = HashMap::new();
     let mut entity_to_view: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -107,7 +108,11 @@ fn feature_views_to_keys<'a>(
             views_keys
                 .get(feature_view.name.as_str())
                 .map(|v| v.clone())
-                .ok_or("".to_string()),
+                .ok_or(anyhow!(
+                    "Cannot build entity keys for feature {}_{}",
+                    requested_feature.feature_view_name,
+                    requested_feature.feature_name
+                )),
         );
     }
     result

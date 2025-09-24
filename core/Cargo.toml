@@ -3,13 +3,18 @@ name = "core"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+doctest = false
+
 
 [dependencies]
-prost = "0.14.1"
+prost = { version = "0.14.1", features = ["default", "derive"] }
 prost-types = "0.14.1"
 serde = { version = "1.0.219", features = ["default", "derive"] }
 saphyr = { version = "0.0.6", features = ["default", "encoding"] }
+anyhow = { workspace = true }
+
 
 [build-dependencies]
 glob = { version = "0.3.3" }
-prost-build = "0.14.1"
+prost-build = { version = "0.14.1", features = ["default"] }

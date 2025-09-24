@@ -1,11 +1,11 @@
+mod config;
 mod feature_store;
 mod key_serialization;
-mod config;
 mod model;
 mod util;
 
-mod onlinestore;
 mod feature_registry;
+mod onlinestore;
 
 pub mod feast {
     pub mod types {
