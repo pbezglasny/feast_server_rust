@@ -1,12 +1,13 @@
+use crate::config::EntityKeySerializationVersion;
 use crate::feast::types::EntityKey;
 use crate::feast::types::Value;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum;
-use crate::config::EntityKeySerializationVersion;
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
-fn serialize_value(value: &Value) -> Result<Vec<u8>, String> {
-    let val = value.val.as_ref().ok_or("")?;
+fn serialize_value(value: &Value) -> Result<Vec<u8>> {
+    let val = value.val.as_ref().ok_or(anyhow!("Missing value"))?;
     match val {
         Val::Int32Val(v) => {
             let mut bytes = Vec::with_capacity(12);
@@ -36,19 +37,19 @@ fn serialize_value(value: &Value) -> Result<Vec<u8>, String> {
             bytes.extend(v);
             Ok(bytes)
         }
-        _ => Err("Unsupported type".to_string()),
+        _ => Err(anyhow!("Unsupported type")),
     }
 }
 pub fn serialize_key(
     entity_key: &EntityKey,
     serializer_version: EntityKeySerializationVersion,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     match serializer_version {
         EntityKeySerializationVersion::V1 => {
-            return Err("Unsupported version of key serializer".to_string());
+            return Err(anyhow!("Unsupported version of key serializer"));
         }
         EntityKeySerializationVersion::V2 => {
-            return Err("Unsupported version of key serializer".to_string());
+            return Err(anyhow!("Unsupported version of key serializer"));
         }
         _ => {}
     }
@@ -68,7 +69,7 @@ pub fn serialize_key(
         bytes.extend(key.bytes());
     }
     for key in &sorted_keys {
-        let value = key_map.get(key).ok_or("Key not found in map")?;
+        let value = key_map.get(key).ok_or(anyhow!("Key not found in map"))?;
         let value_bytes = serialize_value(value)?;
         bytes.extend(value_bytes);
     }

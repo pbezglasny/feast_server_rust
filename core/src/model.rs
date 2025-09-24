@@ -5,20 +5,19 @@ use crate::feast::core::FeatureView as FeatureViewProto;
 use crate::feast::core::FeatureViewProjection as FeatureViewProjectionProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{Value, value_type};
+use crate::feast::types::{value_type, Value};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
 use serde::ser::Error as SerdeError;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
+use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use std::time::SystemTime;
-
-pub const DUMMY_ENTITY_NAME: &'static str = "";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EntityId {
@@ -113,9 +112,10 @@ pub struct FeatureResults {
     event_timestamps: SystemTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct GetOnlineFeatureResponse {
-    pub field_values: HashMap<String, Vec<Option<String>>>,
+    pub metadata: GetOnlineFeatureResponseMetadata,
+    pub results: Vec<FeatureResults>,
 }
 
 #[derive(Debug, Clone)]
@@ -196,8 +196,54 @@ pub enum RequestedFeatures<'a> {
     FeatureService(&'a str),
 }
 
-impl<'a> RequestedFeatures<'a> {
-    pub fn from_request(get_online_feature_request: &'a GetOnlineFeatureRequest) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestedFeature {
+    pub feature_view_name: String,
+    pub feature_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestedFeatureWithTTL<'a> {
+    pub requested_feature: &'a RequestedFeature,
+    ttl: Duration,
+}
+
+impl<'a> PartialEq for RequestedFeatureWithTTL<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.requested_feature == other.requested_feature
+    }
+}
+
+impl<'a> Eq for RequestedFeatureWithTTL<'a> {}
+
+impl<'a> Hash for RequestedFeatureWithTTL<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.requested_feature.hash(state);
+    }
+}
+
+impl RequestedFeature {
+    pub fn from_str(s: &str) -> Result<Self> {
+        if s.is_empty() {
+            return Err(anyhow!("Empty feature string"));
+        }
+        if let Some(idx) = s.find(':') {
+            let (fv_name, f_name) = s.split_at(idx);
+            Ok(Self {
+                feature_view_name: fv_name.to_string(),
+                feature_name: f_name[1..].to_string(),
+            })
+        } else {
+            Ok(Self {
+                feature_view_name: "".to_string(),
+                feature_name: s.to_string(),
+            })
+        }
+    }
+}
+
+impl<'a> From<&'a GetOnlineFeatureRequest> for RequestedFeatures<'a> {
+    fn from(get_online_feature_request: &'a GetOnlineFeatureRequest) -> Self {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
             RequestedFeatures::FeatureService(feature_service)
         } else {

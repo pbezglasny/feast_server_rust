@@ -1,64 +1,38 @@
 use crate::feast::types::{EntityKey, value_type};
-use crate::model::{EntityId, FeatureView};
+use crate::feature_registry::FeatureRegistryProto;
+use crate::model::{
+    EntityId, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse, RequestedFeature,
+};
+use crate::onlinestore::OnlineStore;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RequestedFeature {
-    pub feature_view_name: String,
-    pub feature_name: String,
+trait FeatureStore {
+    fn get_online_features(&self, request: GetOnlineFeatureRequest) -> GetOnlineFeatureResponse;
 }
 
-#[derive(Debug, Clone)]
-pub struct RequestedFeatureWithTTL<'a> {
-    pub requested_feature: &'a RequestedFeature,
-    ttl: Duration,
+struct DefaultFeatureStore {
+    registry: FeatureRegistryProto,
+    online_store: Box<dyn OnlineStore>,
 }
 
-impl<'a> PartialEq for RequestedFeatureWithTTL<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        self.requested_feature == other.requested_feature
-    }
-}
+impl FeatureStore for DefaultFeatureStore {
+    fn get_online_features(&self, request: GetOnlineFeatureRequest) -> GetOnlineFeatureResponse {
+        let feature_to_view = self.registry.request_to_view_keys(&request);
+        let keys = feature_views_to_keys(&feature_to_view, &request.entities);
 
-impl<'a> Eq for RequestedFeatureWithTTL<'a> {}
-
-impl<'a> Hash for RequestedFeatureWithTTL<'a> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.requested_feature.hash(state);
-    }
-}
-
-impl RequestedFeature {
-    pub fn from_str(s: &str) -> Result<Self> {
-        if s.is_empty() {
-            return Err(anyhow!("Empty feature string"));
-        }
-        if let Some(idx) = s.find(':') {
-            let (fv_name, f_name) = s.split_at(idx);
-            Ok(Self {
-                feature_view_name: fv_name.to_string(),
-                feature_name: f_name[1..].to_string(),
-            })
-        } else {
-            Ok(Self {
-                feature_view_name: "".to_string(),
-                feature_name: s.to_string(),
-            })
-        }
+        todo!()
     }
 }
 
 fn feature_views_to_keys<'a>(
-    feature_views: &'a HashMap<&RequestedFeature, &FeatureView>,
-    requested_entity_keys: HashMap<String, Vec<EntityId>>,
+    feature_to_view: &'a HashMap<RequestedFeature, &FeatureView>,
+    requested_entity_keys: &HashMap<String, Vec<EntityId>>,
 ) -> HashMap<&'a RequestedFeature, Result<Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
     let mut entity_key_type: HashMap<(&str, &str), value_type::Enum> = HashMap::new();
     let mut entity_to_view: HashMap<&str, Vec<&str>> = HashMap::new();
-    for feature_view in feature_views.values() {
+    for feature_view in feature_to_view.values() {
         for entity_col in &feature_view.entity_columns {
             if !entity_to_view.contains_key(entity_col.name.as_str()) {
                 entity_to_view.insert(entity_col.name.as_str(), Vec::new());
@@ -76,7 +50,7 @@ fn feature_views_to_keys<'a>(
 
     // view_name to key
     let mut views_keys: HashMap<&str, Vec<EntityKey>> = HashMap::new();
-    for (entity_id, entity_keys) in &requested_entity_keys {
+    for (entity_id, entity_keys) in requested_entity_keys {
         for feature_view_name in entity_to_view
             .get(entity_id.as_str())
             .unwrap_or(&Vec::new())
@@ -102,9 +76,9 @@ fn feature_views_to_keys<'a>(
     }
 
     let mut result = HashMap::new();
-    for (requested_feature, feature_view) in feature_views {
+    for (requested_feature, feature_view) in feature_to_view {
         result.insert(
-            *requested_feature,
+            requested_feature,
             views_keys
                 .get(feature_view.name.as_str())
                 .map(|v| v.clone())
@@ -121,6 +95,7 @@ fn feature_views_to_keys<'a>(
 #[cfg(test)]
 mod tests {
     use crate::model::Field;
+    use std::time::Duration;
 
     #[test]
     fn feature_views_to_keys_test() {
@@ -159,8 +134,7 @@ mod tests {
             feature_view_name: "feature_view2".to_string(),
             feature_name: "col2".to_string(),
         };
-        let features =
-            HashMap::from([(&feature_1, &feature_view_1), (&feature_2, &feature_view_2)]);
+        let features = HashMap::from([(feature_1, &feature_view_1), (feature_2, &feature_view_2)]);
         let requested_entity_keys = HashMap::from([
             (
                 "field1".to_string(),
@@ -171,7 +145,7 @@ mod tests {
                 vec![EntityId::Int(22), EntityId::Int(24), EntityId::Int(26)],
             ),
         ]);
-        let result = feature_views_to_keys(&features, requested_entity_keys);
+        let result = feature_views_to_keys(&features, &requested_entity_keys);
         println!("{:?}", result);
     }
 }
