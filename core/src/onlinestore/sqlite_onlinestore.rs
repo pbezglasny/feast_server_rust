@@ -57,7 +57,7 @@ impl OnlineStore for SqliteOnlineStore {
         &self,
         feature_view: &str,
         keys: &[EntityKey],
-        requested_feature_names: &[String],
+        requested_feature_names: &[&str],
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut connection = self.connection_pool.acquire().await?;
         let table_name = format!("{}_{}", self.project, feature_view);
@@ -96,7 +96,7 @@ impl SqliteOnlineStore {
             .acquire_timeout(connection_options.acquire_timeout)
             .idle_timeout(connection_options.idle_timeout)
             .test_before_acquire(connection_options.test_before_acquire)
-            .connect(path.as_ref())
+            .connect(path)
             .await?;
         Ok(Self {
             project,
@@ -123,7 +123,7 @@ mod test {
             }],
         };
         let keys = vec![entity_key];
-        let features = vec!["conv_rate".to_string()];
+        let features = vec!["conv_rate"];
 
         let sqlite_store = SqliteOnlineStore::from_options(
             path,

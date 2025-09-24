@@ -20,6 +20,6 @@ pub trait OnlineStore {
         &self,
         feature_view: &str,
         keys: &[EntityKey],
-        requested_feature_names: &[String],
+        requested_feature_names: &[&str],
     ) -> Result<Vec<OnlineStoreRow>>;
 }
