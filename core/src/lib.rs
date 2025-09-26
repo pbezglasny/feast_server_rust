@@ -6,8 +6,8 @@ mod key_serialization;
 mod model;
 mod util;
 
-mod feature_registry;
 mod onlinestore;
+mod registry;
 
 pub mod feast {
     pub mod types {

@@ -1,12 +1,14 @@
 use crate::model::{
-    FeatureRegistry, FeatureView, GetOnlineFeatureRequest, RequestedFeature,
-    RequestedFeatures,
+    FeatureRegistry, FeatureView, GetOnlineFeatureRequest, RequestedFeature, RequestedFeatures,
 };
+use crate::registry::FeatureRegistryService;
 use anyhow::Result;
+use async_trait::async_trait;
 use prost::Message;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
+use std::sync::Arc;
 
 pub struct FeatureRegistryProto {
     registry: FeatureRegistry,
@@ -56,18 +58,21 @@ impl FeatureRegistryProto {
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
-    ) -> HashMap<RequestedFeature, &FeatureView> {
+    ) -> HashMap<RequestedFeature, FeatureView> {
         match requested_features {
             RequestedFeatures::FeatureService(service_name) => HashMap::new(),
             RequestedFeatures::FeatureNames(names) => HashMap::new(),
         }
     }
+}
 
-    pub fn request_to_view_keys<'a>(
-        &'a self,
-        request: &'a GetOnlineFeatureRequest,
-    ) -> HashMap<RequestedFeature, &'a FeatureView> {
-        let requested_features = RequestedFeatures::from(request);
+#[async_trait]
+impl FeatureRegistryService for FeatureRegistryProto {
+    async fn request_to_view_keys(
+        &self,
+        request: Arc<GetOnlineFeatureRequest>,
+    ) -> HashMap<RequestedFeature, FeatureView> {
+        let requested_features = RequestedFeatures::from(request.as_ref());
         let feature_views = self.get_feature_views(requested_features);
         feature_views
     }
@@ -75,8 +80,8 @@ impl FeatureRegistryProto {
 
 #[cfg(test)]
 mod tests {
-    use crate::feature_registry::FeatureRegistryProto;
     use crate::model::RequestedFeature;
+    use crate::registry::feature_registry::FeatureRegistryProto;
     use anyhow::Result;
 
     #[test]

@@ -1,17 +1,18 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
-use crate::feature_registry::FeatureRegistryProto;
 use crate::model::{
     EntityId, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse, RequestedFeature,
 };
 use crate::onlinestore::OnlineStore;
+use crate::registry::FeatureRegistryService;
+use crate::registry::feature_registry::FeatureRegistryProto;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
 struct FeatureStore {
-    registry: FeatureRegistryProto,
+    registry: Arc<dyn FeatureRegistryService>,
     online_store: Arc<dyn OnlineStore>,
 }
 
@@ -20,11 +21,14 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: HashMap<RequestedFeature, &FeatureView> =
-            self.registry.request_to_view_keys(&request);
+        let request_arc = Arc::new(request);
+        let feature_to_view: HashMap<RequestedFeature, FeatureView> = self
+            .registry
+            .request_to_view_keys(Arc::clone(&request_arc))
+            .await;
 
         let keys_by_view: HashMap<&RequestedFeature, Result<Vec<EntityKey>>> =
-            feature_views_to_keys(&feature_to_view, &request.entities);
+            feature_views_to_keys(&feature_to_view, &request_arc.entities);
 
         let mut view_to_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
         let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
@@ -91,7 +95,7 @@ impl FeatureStore {
 }
 
 fn feature_views_to_keys<'a>(
-    feature_to_view: &'a HashMap<RequestedFeature, &FeatureView>,
+    feature_to_view: &'a HashMap<RequestedFeature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
 ) -> HashMap<&'a RequestedFeature, Result<Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
@@ -201,7 +205,7 @@ mod tests {
             feature_view_name: "feature_view2".to_string(),
             feature_name: "col2".to_string(),
         };
-        let features = HashMap::from([(feature_1, &feature_view_1), (feature_2, &feature_view_2)]);
+        let features = HashMap::from([(feature_1, feature_view_1), (feature_2, feature_view_2)]);
         let requested_entity_keys = HashMap::from([
             (
                 "field1".to_string(),
@@ -216,9 +220,9 @@ mod tests {
         println!("{:?}", result);
     }
 
-    use crate::feature_registry::FeatureRegistryProto;
     use crate::feature_store::FeatureStore;
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
+    use crate::registry::feature_registry::FeatureRegistryProto;
     use anyhow::Result;
 
     #[tokio::test]
@@ -236,7 +240,7 @@ mod tests {
         .await?;
         let sqlite_store_arc = Arc::new(sqlite_store);
         let store = FeatureStore {
-            registry: feature_registry,
+            registry: Arc::new(feature_registry),
             online_store: sqlite_store_arc,
         };
 
