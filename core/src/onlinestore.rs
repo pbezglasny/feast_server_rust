@@ -1,4 +1,4 @@
-mod sqlite_onlinestore;
+pub mod sqlite_onlinestore;
 
 use crate::feast::types::EntityKey;
 use anyhow::Result;
@@ -15,7 +15,7 @@ pub struct OnlineStoreRow {
 }
 
 #[async_trait]
-pub trait OnlineStore {
+pub trait OnlineStore: Send + Sync {
     async fn get_feature_values(
         &self,
         feature_view: &str,

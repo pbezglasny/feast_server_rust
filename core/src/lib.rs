@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 mod config;
 mod feature_store;
 mod key_serialization;

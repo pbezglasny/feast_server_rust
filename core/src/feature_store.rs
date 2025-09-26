@@ -1,4 +1,5 @@
-use crate::feast::types::{EntityKey, value_type};
+use crate::feast::types::value::Val;
+use crate::feast::types::{EntityKey, Value, value_type};
 use crate::feature_registry::FeatureRegistryProto;
 use crate::model::{
     EntityId, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse, RequestedFeature,
@@ -6,21 +7,85 @@ use crate::model::{
 use crate::onlinestore::OnlineStore;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::task::JoinSet;
 
-trait FeatureStore {
-    fn get_online_features(&self, request: GetOnlineFeatureRequest) -> GetOnlineFeatureResponse;
-}
-
-struct DefaultFeatureStore {
+struct FeatureStore {
     registry: FeatureRegistryProto,
-    online_store: Box<dyn OnlineStore>,
+    online_store: Arc<dyn OnlineStore>,
 }
 
-impl FeatureStore for DefaultFeatureStore {
-    fn get_online_features(&self, request: GetOnlineFeatureRequest) -> GetOnlineFeatureResponse {
-        let feature_to_view = self.registry.request_to_view_keys(&request);
-        let keys = feature_views_to_keys(&feature_to_view, &request.entities);
+impl FeatureStore {
+    async fn get_online_features(
+        &self,
+        request: GetOnlineFeatureRequest,
+    ) -> Result<GetOnlineFeatureResponse> {
+        let feature_to_view: HashMap<RequestedFeature, &FeatureView> =
+            self.registry.request_to_view_keys(&request);
 
+        let keys_by_view: HashMap<&RequestedFeature, Result<Vec<EntityKey>>> =
+            feature_views_to_keys(&feature_to_view, &request.entities);
+
+        let mut view_to_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
+        let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
+
+        for (view_name, result_keys) in keys_by_view.into_iter() {
+            match result_keys {
+                Ok(kv) => {
+                    view_to_keys.insert(view_name.feature_view_name.clone(), kv);
+                    view_features
+                        .entry(view_name.feature_view_name.clone())
+                        .or_default();
+                }
+                Err(e) => {
+                    eprintln!("error building keys: {:?}", e);
+                }
+            }
+        }
+
+        for (requested_feature, _fv) in feature_to_view.into_iter() {
+            view_features
+                .entry(requested_feature.feature_view_name.clone())
+                .or_default()
+                .push(requested_feature.feature_name.clone());
+        }
+
+        let mut join_set = JoinSet::new();
+        for (view_name, entity_keys) in view_to_keys.into_iter() {
+            // take the owned features for this view
+            let features = view_features.remove(&view_name).unwrap_or_default();
+            let online = Arc::clone(&self.online_store);
+
+            join_set.spawn(async move {
+                let feature_refs: Vec<&str> = features.iter().map(|s| s.as_str()).collect();
+                online
+                    .get_feature_values(view_name.as_str(), &entity_keys, &feature_refs)
+                    .await
+            });
+        }
+
+        let online = Arc::clone(&self.online_store);
+        join_set.spawn(async move {
+            let feature_view = "driver_hourly_stats";
+            let entity_key = EntityKey {
+                join_keys: vec!["driver_id".to_string()],
+                entity_values: vec![Value {
+                    val: Some(Val::Int64Val(1005)),
+                }],
+            };
+            let keys = vec![entity_key];
+            let features = vec!["conv_rate"];
+            online
+                .get_feature_values(feature_view, &keys, &features)
+                .await
+        });
+
+        while let Some(res) = join_set.join_next().await {
+            match res {
+                Ok(val) => println!("{:?}", val),
+                Err(e) => eprintln!("Task panicked: {:?}", e),
+            }
+        }
         todo!()
     }
 }
@@ -94,7 +159,9 @@ fn feature_views_to_keys<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::model::Field;
+    use crate::model::{EntityId, Field, GetOnlineFeatureRequest};
+    use std::collections::HashMap;
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[test]
@@ -147,5 +214,41 @@ mod tests {
         ]);
         let result = feature_views_to_keys(&features, &requested_entity_keys);
         println!("{:?}", result);
+    }
+
+    use crate::feature_registry::FeatureRegistryProto;
+    use crate::feature_store::FeatureStore;
+    use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
+    use anyhow::Result;
+
+    #[tokio::test]
+    async fn get_features() -> Result<()> {
+        let project_dir = env!("CARGO_MANIFEST_DIR");
+        let registry_file = format!("{}/test_data/registry.pb", project_dir);
+        let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;
+        let sqlite_path =
+            "/Users/pavel/work/rust/feast_rust/dev/golden_hornet/feature_repo/data/online_store.db";
+        let sqlite_store = SqliteOnlineStore::from_options(
+            sqlite_path,
+            "golden_hornet".to_string(),
+            ConnectionOptions::default(),
+        )
+        .await?;
+        let sqlite_store_arc = Arc::new(sqlite_store);
+        let store = FeatureStore {
+            registry: feature_registry,
+            online_store: sqlite_store_arc,
+        };
+
+        let entities = HashMap::from([("driver_id".to_string(), vec![EntityId::Int(1005)])]);
+        let request = GetOnlineFeatureRequest {
+            entities,
+            feature_service: None,
+            features: vec!["driver_hourly_stats".to_string()],
+            full_feature_names: Some(false),
+        };
+        let res = store.get_online_features(request).await;
+
+        Ok(())
     }
 }

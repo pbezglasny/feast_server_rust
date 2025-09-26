@@ -27,6 +27,8 @@ impl FeatureRegistryProto {
         Ok(Self { registry })
     }
 
+    #[allow(dead_code)]
+    #[allow(unused_variables)]
     fn feature_views_from_service(&self, service_name: &str) -> Vec<&FeatureView> {
         // TODO
         // let service = self.registry.feature_services.get(service_name).ok_or("");
@@ -49,6 +51,8 @@ impl FeatureRegistryProto {
             .collect()
     }
 
+    #[allow(dead_code)]
+    #[allow(unused_variables)]
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
