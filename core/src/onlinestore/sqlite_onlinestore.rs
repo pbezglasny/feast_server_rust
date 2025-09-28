@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 pub struct ConnectionOptions {
     max_connections: u32,
@@ -29,7 +29,29 @@ impl Default for ConnectionOptions {
     }
 }
 
-impl FromRow<'_, SqliteRow> for OnlineStoreRow {
+#[derive(Debug)]
+pub struct SqliteStoreRow {
+    pub entity_key: Vec<u8>,
+    pub feature_name: String,
+    pub value: Vec<u8>,
+    pub event_ts: SystemTime,
+    pub created_ts: SystemTime,
+}
+
+impl SqliteStoreRow {
+    fn converto_to_online_store_row(self, feature_view_name: &str) -> OnlineStoreRow {
+        OnlineStoreRow {
+            feature_view_name: feature_view_name.to_owned(),
+            entity_key: self.entity_key,
+            feature_name: self.feature_name,
+            value: self.value,
+            event_ts: self.event_ts,
+            created_ts: self.created_ts,
+        }
+    }
+}
+
+impl FromRow<'_, SqliteRow> for SqliteStoreRow {
     fn from_row(row: &SqliteRow) -> sqlx::Result<Self> {
         let entity_key: Vec<u8> = row.try_get("entity_key")?;
         let feature_name: String = row.try_get("feature_name")?;
@@ -79,8 +101,11 @@ impl OnlineStore for SqliteOnlineStore {
         for feature_name in requested_feature_names {
             sqlx_query = sqlx_query.bind(feature_name);
         }
-        let result: Vec<OnlineStoreRow> = sqlx_query.fetch_all(&mut *connection).await?;
-        Ok(result)
+        let result: Vec<SqliteStoreRow> = sqlx_query.fetch_all(&mut *connection).await?;
+        Ok(result
+            .into_iter()
+            .map(|r| r.converto_to_online_store_row(feature_view))
+            .collect())
     }
 }
 

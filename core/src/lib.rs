@@ -8,6 +8,7 @@ mod util;
 
 mod onlinestore;
 mod registry;
+mod proto_utils;
 
 pub mod feast {
     pub mod types {
