@@ -1,9 +1,10 @@
 use anyhow::Error;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use saphyr::{Scalar, Yaml};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum Provider {
     Local,
     AWS,
@@ -15,7 +16,7 @@ pub enum Provider {
 pub enum RegistryType {
     #[default]
     File,
-    SQL,
+    Sql,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -69,8 +70,10 @@ impl TryFrom<&Yaml<'_>> for RegistryConfig {
                 let s = val
                     .as_str()
                     .ok_or(anyhow!("Expected string for registry path"))?;
-                let mut config = RegistryConfig::default();
-                config.path = s.to_string();
+                let config = RegistryConfig {
+                    path: s.to_string(),
+                    ..Default::default()
+                };
                 Ok(config)
             }
             Yaml::Mapping(map) => {
@@ -96,7 +99,7 @@ impl TryFrom<&Yaml<'_>> for RegistryConfig {
                                 if let Yaml::Value(Scalar::String(type_str)) = value {
                                     config.registry_type = match type_str.as_ref() {
                                         "file" => RegistryType::File,
-                                        "sql" => RegistryType::SQL,
+                                        "sql" => RegistryType::Sql,
                                         _ => {
                                             return Err(anyhow!("Invalid registry_type value"));
                                         }

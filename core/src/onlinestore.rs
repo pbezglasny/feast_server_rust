@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 #[derive(Debug)]
 pub struct OnlineStoreRow {
+    pub feature_view_name: String,
     pub entity_key: Vec<u8>,
     pub feature_name: String,
     pub value: Vec<u8>,

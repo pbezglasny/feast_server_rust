@@ -4,12 +4,14 @@ use crate::feast::core::FeatureSpecV2 as FeatureSpecV2Proto;
 use crate::feast::core::FeatureView as FeatureViewProto;
 use crate::feast::core::FeatureViewProjection as FeatureViewProjectionProto;
 use crate::feast::core::Registry as RegistryProto;
+use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{value_type, Value};
+use crate::feast::types::{Value, value_type};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
+use prost::Message;
 use serde::ser::Error as SerdeError;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
@@ -19,7 +21,7 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use std::time::SystemTime;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EntityId {
     String(String),
     Int(i64),
@@ -47,7 +49,7 @@ impl EntityId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GetOnlineFeatureRequest {
     pub entities: HashMap<String, Vec<EntityId>>,
     pub feature_service: Option<String>,
@@ -55,9 +57,9 @@ pub struct GetOnlineFeatureRequest {
     pub full_feature_names: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GetOnlineFeatureResponseMetadata {
-    feature_names: Vec<String>,
+    pub feature_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,7 +72,27 @@ pub enum FeatureStatus {
     OutsideMaxAge,
 }
 
-pub struct ValueWrapper(Value);
+pub struct ValueWrapper(pub Value);
+
+impl ValueWrapper {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let val = Value::decode(bytes)?;
+        Ok(Self(val))
+    }
+}
+
+impl From<EntityId> for ValueWrapper {
+    fn from(value: EntityId) -> Self {
+        match value {
+            EntityId::Int(v) => Self(Value {
+                val: Some(Val::Int64Val(v)),
+            }),
+            EntityId::String(v) => Self(Value {
+                val: Some(Val::StringVal(v)),
+            }),
+        }
+    }
+}
 
 impl Serialize for ValueWrapper {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -105,14 +127,14 @@ impl fmt::Debug for ValueWrapper {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct FeatureResults {
-    values: Vec<ValueWrapper>,
-    statuses: Vec<FeatureStatus>,
-    event_timestamps: SystemTime,
+    pub values: Vec<ValueWrapper>,
+    pub statuses: Vec<FeatureStatus>,
+    pub event_timestamps: Vec<SystemTime>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct GetOnlineFeatureResponse {
     pub metadata: GetOnlineFeatureResponseMetadata,
     pub results: Vec<FeatureResults>,
@@ -191,9 +213,9 @@ pub struct FeatureRegistry {
 }
 
 #[derive(Debug, Clone)]
-pub enum RequestedFeatures<'a> {
-    FeatureNames(&'a Vec<String>),
-    FeatureService(&'a str),
+pub enum RequestedFeatures {
+    FeatureNames(Vec<String>),
+    FeatureService(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -222,8 +244,10 @@ impl<'a> Hash for RequestedFeatureWithTTL<'a> {
     }
 }
 
-impl RequestedFeature {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl TryFrom<&str> for RequestedFeature {
+    type Error = Error;
+
+    fn try_from(s: &str) -> Result<Self> {
         if s.is_empty() {
             return Err(anyhow!("Empty feature string"));
         }
@@ -242,12 +266,12 @@ impl RequestedFeature {
     }
 }
 
-impl<'a> From<&'a GetOnlineFeatureRequest> for RequestedFeatures<'a> {
-    fn from(get_online_feature_request: &'a GetOnlineFeatureRequest) -> Self {
+impl From<&GetOnlineFeatureRequest> for RequestedFeatures {
+    fn from(get_online_feature_request: &GetOnlineFeatureRequest) -> Self {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
-            RequestedFeatures::FeatureService(feature_service)
+            RequestedFeatures::FeatureService(feature_service.clone())
         } else {
-            RequestedFeatures::FeatureNames(&get_online_feature_request.features)
+            RequestedFeatures::FeatureNames(get_online_feature_request.features.clone())
         }
     }
 }
@@ -298,7 +322,7 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
         let features: Result<Vec<Field>> = projection_proto
             .feature_columns
             .into_iter()
-            .map(|f| Field::try_from(f))
+            .map(Field::try_from)
             .collect();
         Ok(FeatureProjection {
             name: projection_proto.feature_view_name,
@@ -315,18 +339,14 @@ impl TryFrom<FeatureViewProto> for FeatureView {
         let spec = feature_view_proto
             .spec
             .ok_or(anyhow!("Missing feature view value"))?;
-        let features: Result<Vec<Field>> = spec
-            .features
-            .into_iter()
-            .map(|f| Field::try_from(f))
-            .collect();
+        let features: Result<Vec<Field>> = spec.features.into_iter().map(Field::try_from).collect();
         Ok(FeatureView {
             name: spec.name,
             features: features?,
             ttl: spec
                 .ttl
                 .as_ref()
-                .map(|d| prost_duration_to_std(d))
+                .map(prost_duration_to_std)
                 .unwrap_or(Duration::from_secs(0)),
             entity_names: spec.entities,
             entity_columns: spec
@@ -353,7 +373,7 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
         let projections: Result<Vec<FeatureProjection>> = spec
             .features
             .into_iter()
-            .map(|p| FeatureProjection::try_from(p))
+            .map(FeatureProjection::try_from)
             .collect();
         Ok(FeatureService {
             name: spec.name,
