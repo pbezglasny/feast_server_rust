@@ -1,14 +1,14 @@
 #![allow(unused)]
 
-mod config;
-mod feature_store;
+pub mod config;
+pub mod feature_store;
 mod key_serialization;
-mod model;
+pub mod model;
 mod util;
 
-mod onlinestore;
-mod registry;
+pub mod onlinestore;
 mod proto_utils;
+pub mod registry;
 
 pub mod feast {
     pub mod types {

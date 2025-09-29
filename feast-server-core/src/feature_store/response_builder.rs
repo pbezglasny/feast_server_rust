@@ -7,6 +7,7 @@ use crate::model::{
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
+use chrono::DateTime;
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 
@@ -63,7 +64,6 @@ impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlin
         let mut result = GetOnlineFeatureResponse::default();
 
         for (entity_key_name, values) in entity_keys {
-            result.metadata.feature_names.push(entity_key_name.clone());
             let mut associated_values_map =
                 feature_values.remove(&entity_key_name).unwrap_or_default();
             let associated_features = entity_to_features
@@ -78,7 +78,7 @@ impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlin
                     let mut entity_result = features.entry(&entity_key_name).or_default();
                     entity_result.values.push(ValueWrapper::from(entity_val));
                     entity_result.statuses.push(FeatureStatus::Present);
-                    entity_result.event_timestamps.push(SystemTime::UNIX_EPOCH);
+                    entity_result.event_timestamps.push(DateTime::UNIX_EPOCH);
                 }
                 for associate_feature in &associated_features {
                     let value_opt = values.remove(associate_feature);
@@ -89,18 +89,29 @@ impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlin
                                 .values
                                 .push(ValueWrapper(Value { val: None }));
                             feature_result.statuses.push(FeatureStatus::NotFound);
-                            feature_result.event_timestamps.push(SystemTime::UNIX_EPOCH);
+                            feature_result
+                                .event_timestamps
+                                .push(DateTime::from(SystemTime::UNIX_EPOCH));
                         }
                         Some((val, status, event_ts)) => {
                             feature_result
                                 .values
                                 .push(ValueWrapper(Value { val: Some(val) }));
                             feature_result.statuses.push(FeatureStatus::Present);
-                            feature_result.event_timestamps.push(event_ts);
+                            feature_result
+                                .event_timestamps
+                                .push(DateTime::from(event_ts));
                         }
                     }
                 }
             }
+
+            result.metadata.feature_names.push(entity_key_name.clone());
+            result.results.push(
+                features
+                    .remove(entity_key_name.as_str())
+                    .ok_or(anyhow!("Missing values for feature {}", entity_key_name))?,
+            );
 
             for feature in &associated_features {
                 result.results.push(

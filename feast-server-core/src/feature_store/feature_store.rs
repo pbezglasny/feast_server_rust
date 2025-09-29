@@ -9,13 +9,23 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
-struct FeatureStore {
+pub struct FeatureStore {
     registry: Arc<dyn FeatureRegistryService>,
     online_store: Arc<dyn OnlineStore>,
 }
 
 impl FeatureStore {
-    async fn get_online_features(
+    pub fn new(
+        registry: Arc<dyn FeatureRegistryService>,
+        online_store: Arc<dyn OnlineStore>,
+    ) -> Self {
+        Self {
+            registry,
+            online_store,
+        }
+    }
+
+    pub async fn get_online_features(
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
@@ -229,10 +239,9 @@ mod tests {
             ConnectionOptions::default(),
         )
         .await?;
-        let sqlite_store_arc = Arc::new(sqlite_store);
         let store = FeatureStore {
             registry: Arc::new(feature_registry),
-            online_store: sqlite_store_arc,
+            online_store: Arc::new(sqlite_store),
         };
 
         let entities = HashMap::from([(

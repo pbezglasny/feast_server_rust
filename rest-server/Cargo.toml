@@ -1,0 +1,12 @@
+[package]
+name = "rest-server"
+description.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+feast-server-core = { path = "../feast-server-core" }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+axum = { version = "0.8.5" }
+serde_json = "1.0.145"

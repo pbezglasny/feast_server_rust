@@ -6,14 +6,15 @@ use crate::feast::core::FeatureViewProjection as FeatureViewProjectionProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{Value, value_type};
+use crate::feast::types::{value_type, Value};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
+use chrono::{DateTime, Utc};
 use prost::Message;
 use serde::ser::Error as SerdeError;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
@@ -21,7 +22,8 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use std::time::SystemTime;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum EntityId {
     String(String),
     Int(i64),
@@ -31,17 +33,17 @@ impl EntityId {
     pub fn to_proto_value(&self, output_type: value_type::Enum) -> Result<Value> {
         match self {
             EntityId::String(s) => Ok(Value {
-                val: Some(crate::feast::types::value::Val::StringVal(s.clone())),
+                val: Some(Val::StringVal(s.clone())),
             }),
             EntityId::Int(i) => match output_type {
                 value_type::Enum::Int32 => Ok(Value {
-                    val: Some(crate::feast::types::value::Val::Int32Val(*i as i32)),
+                    val: Some(Val::Int32Val(*i as i32)),
                 }),
                 value_type::Enum::Int64 => Ok(Value {
-                    val: Some(crate::feast::types::value::Val::Int64Val(*i)),
+                    val: Some(Val::Int64Val(*i)),
                 }),
                 value_type::Enum::String => Ok(Value {
-                    val: Some(crate::feast::types::value::Val::StringVal(i.to_string())),
+                    val: Some(Val::StringVal(i.to_string())),
                 }),
                 _ => Err(anyhow!("Unsupported type convertion for number type")),
             },
@@ -102,16 +104,14 @@ impl Serialize for ValueWrapper {
         match &self.0.val {
             None => serializer.serialize_none(),
             Some(v) => match v {
-                crate::feast::types::value::Val::Int32Val(i) => serializer.serialize_i32(*i),
-                crate::feast::types::value::Val::Int64Val(i) => serializer.serialize_i64(*i),
-                crate::feast::types::value::Val::FloatVal(f) => serializer.serialize_f32(*f),
-                crate::feast::types::value::Val::DoubleVal(d) => serializer.serialize_f64(*d),
-                crate::feast::types::value::Val::StringVal(s) => serializer.serialize_str(s),
-                crate::feast::types::value::Val::BytesVal(b) => serializer.serialize_bytes(b),
-                crate::feast::types::value::Val::BoolVal(b) => serializer.serialize_bool(*b),
-                crate::feast::types::value::Val::UnixTimestampVal(ts) => {
-                    serializer.serialize_i64(*ts)
-                }
+                Val::Int32Val(i) => serializer.serialize_i32(*i),
+                Val::Int64Val(i) => serializer.serialize_i64(*i),
+                Val::FloatVal(f) => serializer.serialize_f32(*f),
+                Val::DoubleVal(d) => serializer.serialize_f64(*d),
+                Val::StringVal(s) => serializer.serialize_str(s),
+                Val::BytesVal(b) => serializer.serialize_bytes(b),
+                Val::BoolVal(b) => serializer.serialize_bool(*b),
+                Val::UnixTimestampVal(ts) => serializer.serialize_i64(*ts),
                 other => Err(S::Error::custom(format!(
                     "unsupported value variant: {:?}",
                     other
@@ -131,7 +131,8 @@ impl fmt::Debug for ValueWrapper {
 pub struct FeatureResults {
     pub values: Vec<ValueWrapper>,
     pub statuses: Vec<FeatureStatus>,
-    pub event_timestamps: Vec<SystemTime>,
+    // #[serde(with = "chrono::serde::ts_seconds")]
+    pub event_timestamps: Vec<DateTime<Utc>>,
 }
 
 #[derive(Debug, Default, Serialize)]

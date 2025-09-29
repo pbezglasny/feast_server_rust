@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 pub mod feature_registry;
 
+pub use feature_registry::FeatureRegistryProto;
+
 #[async_trait]
 pub trait FeatureRegistryService: Send + Sync {
     async fn request_to_view_keys(

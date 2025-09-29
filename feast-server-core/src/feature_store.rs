@@ -1,4 +1,4 @@
 mod feature_store;
 mod response_builder;
 
-pub use feature_store::*;
+pub use feature_store::FeatureStore;
