@@ -1,4 +1,4 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::GetOnlineFeatureRequest;
 use std::sync::Arc;
@@ -36,12 +36,12 @@ async fn handle_feature_reqeust(
         .get_online_features(get_online_feature_request)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-        .map(|response| Json(response))
+        .map(Json)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{start_server, ServerConfig};
+    use super::{ServerConfig, start_server};
     use anyhow::Result;
     use feast_server_core::feature_store::FeatureStore;
     use feast_server_core::onlinestore::sqlite_onlinestore::{

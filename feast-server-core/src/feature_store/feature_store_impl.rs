@@ -221,7 +221,7 @@ mod tests {
         println!("{:?}", result);
     }
 
-    use crate::feature_store::feature_store::FeatureStore;
+    use crate::feature_store::feature_store_impl::FeatureStore;
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
     use crate::registry::feature_registry::FeatureRegistryProto;
     use anyhow::Result;

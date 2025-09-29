@@ -74,7 +74,7 @@ fn deserialize_val(bytes: &[u8], mut idx: usize) -> (Result<(Val, usize)>) {
         Enum::String => {
             let size: u32 = u32::from_le_bytes(bytes[idx..idx + 4].try_into()?);
             idx += 4;
-            let val_str = String::from_utf8(bytes[idx..idx + size as usize].try_into()?)?;
+            let val_str = String::from_utf8(bytes[idx..idx + size as usize].into())?;
             idx += size as usize;
             Ok((Val::StringVal(val_str), idx))
         }
@@ -145,7 +145,7 @@ pub fn deserialize_key(
                 .with_context(|| format!("Cannot deserialize key len for key number {}", i))?,
         );
         idx += 4;
-        let key_name = String::from_utf8(bytes[idx..idx + key_len as usize].try_into()?)
+        let key_name = String::from_utf8(bytes[idx..idx + key_len as usize].into())
             .with_context(|| format!("Cannot deserialize key name for key number {}", i))?
             .to_string();
         join_keys.push(key_name);
