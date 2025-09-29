@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod feature_registry;
+mod cached_registry;
 
 pub use feature_registry::FeatureRegistryProto;
 

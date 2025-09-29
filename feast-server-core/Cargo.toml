@@ -13,9 +13,9 @@ tokio = { workspace = true }
 prost = { version = "0.14.1", features = ["default", "derive"] }
 prost-types = "0.14.1"
 serde = { version = "1.0.219", features = ["default", "derive"] }
-serde_with = { version = "3.14.1" }
 saphyr = { version = "0.0.6", features = ["default", "encoding"] }
 async-trait = { version = "0.1.89" }
+arc-swap = { version = "1.7.1" }
 sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
 chrono = { version = "0.4.42", features = ["default", "serde"] }
 
