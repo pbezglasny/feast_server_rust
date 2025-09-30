@@ -8,19 +8,26 @@ use std::sync::Arc;
 
 pub struct CachedRegistry {
     inner: Arc<ArcSwap<Arc<dyn FeatureRegistryService>>>,
-    ttl: u32,
 }
 
 impl CachedRegistry {
-    pub fn new(feature_registry: Arc<dyn FeatureRegistryService>, ttl: u32) -> Self {
-        Self {
+    pub fn create_cached_registry_and_start_background_thread(
+        feature_registry_fn: fn() -> Arc<dyn FeatureRegistryService>,
+        ttl: u32,
+    ) -> Self {
+        let feature_registry = feature_registry_fn();
+        let result = Self {
             inner: Arc::new(ArcSwap::new(feature_registry.into())),
-            ttl,
-        }
+        };
+        result.start_refresh_task(feature_registry_fn, ttl);
+        result
     }
 
-    fn start_refresh_task(&self, feature_registry: fn() -> Arc<dyn FeatureRegistryService>) {
-        let ttl = self.ttl;
+    fn start_refresh_task(
+        &self,
+        feature_registry: fn() -> Arc<dyn FeatureRegistryService>,
+        ttl: u32,
+    ) {
         let inner = self.inner.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(ttl as u64));

@@ -3,14 +3,15 @@ use crate::feast::core::FeatureService as FeatureServiceProto;
 use crate::feast::core::FeatureSpecV2 as FeatureSpecV2Proto;
 use crate::feast::core::FeatureView as FeatureViewProto;
 use crate::feast::core::FeatureViewProjection as FeatureViewProjectionProto;
+use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{value_type, Value};
+use crate::feast::types::{Value, value_type};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use chrono::{DateTime, Utc};
 use prost::Message;
 use serde::ser::Error as SerdeError;
@@ -176,10 +177,10 @@ pub struct Field {
 
 #[derive(Debug, Clone, Default)]
 pub struct FeatureProjection {
-    pub name: String,
-    pub name_alias: Option<String>,
+    pub feature_view_name: String,
+    pub feature_view_name_alias: Option<String>,
     pub features: Vec<Field>,
-    join_key_map: HashMap<String, String>,
+    pub join_key_map: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -189,6 +190,12 @@ pub struct FeatureView {
     pub ttl: Duration,
     pub entity_names: Vec<String>,
     pub entity_columns: Vec<Field>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct OnDemandFeatureView {
+    pub name: String,
+    pub project: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -210,6 +217,7 @@ pub struct FeatureService {
 pub struct FeatureRegistry {
     pub entities: HashMap<String, Entity>,
     pub feature_views: HashMap<String, FeatureView>,
+    pub on_demand_features: HashMap<String, OnDemandFeatureView>,
     pub feature_services: HashMap<String, FeatureService>,
 }
 
@@ -326,8 +334,8 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
             .map(Field::try_from)
             .collect();
         Ok(FeatureProjection {
-            name: projection_proto.feature_view_name,
-            name_alias: Some(projection_proto.feature_view_name_alias),
+            feature_view_name: projection_proto.feature_view_name,
+            feature_view_name_alias: Some(projection_proto.feature_view_name_alias),
             features: features?,
             join_key_map: projection_proto.join_key_map,
         })
@@ -358,6 +366,19 @@ impl TryFrom<FeatureViewProto> for FeatureView {
                     value_type: ValueTypeEnum::try_from(col.value_type).unwrap(),
                 })
                 .collect(),
+        })
+    }
+}
+
+impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
+    type Error = Error;
+    fn try_from(odfv_proto: OnDemandFeatureViewProto) -> Result<Self> {
+        let spec = odfv_proto
+            .spec
+            .ok_or(anyhow!("Missing on-demand feature view specs"))?;
+        Ok(OnDemandFeatureView {
+            name: spec.name,
+            project: spec.project,
         })
     }
 }
@@ -410,6 +431,14 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
                 Ok((feature_view.name.clone(), feature_view))
             })
             .collect();
+        let ondemand_feature_views: Result<HashMap<String, OnDemandFeatureView>> = registry_proto
+            .on_demand_feature_views
+            .into_iter()
+            .map(|odfv| {
+                let on_demand_feature_view = OnDemandFeatureView::try_from(odfv)?;
+                Ok((on_demand_feature_view.name.clone(), on_demand_feature_view))
+            })
+            .collect();
         let feature_services: Result<HashMap<String, FeatureService>> = registry_proto
             .feature_services
             .into_iter()
@@ -421,6 +450,7 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
         Ok(FeatureRegistry {
             entities: entities?,
             feature_views: feature_views?,
+            on_demand_features: ondemand_feature_views?,
             feature_services: feature_services?,
         })
     }
