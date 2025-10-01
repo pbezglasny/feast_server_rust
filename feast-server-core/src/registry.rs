@@ -4,10 +4,13 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub mod feature_registry;
+pub mod file_feature_registry;
 mod cached_registry;
+mod s3_registry;
+mod local_registry;
+mod feature_registry;
 
-pub use feature_registry::FeatureRegistryProto;
+pub use file_feature_registry::FeatureRegistryProto;
 
 #[async_trait]
 pub trait FeatureRegistryService: Send + Sync {

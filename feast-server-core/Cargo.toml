@@ -18,6 +18,9 @@ async-trait = { version = "0.1.89" }
 arc-swap = { version = "1.7.1" }
 sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
 chrono = { version = "0.4.42", features = ["default", "serde"] }
+aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
+aws-sdk-s3={version = "1.106.0"}
+url = "2.5.7"
 
 
 [build-dependencies]

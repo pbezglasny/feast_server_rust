@@ -223,7 +223,7 @@ mod tests {
 
     use crate::feature_store::feature_store_impl::FeatureStore;
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
-    use crate::registry::feature_registry::FeatureRegistryProto;
+    use crate::registry::file_feature_registry::FeatureRegistryProto;
     use anyhow::Result;
 
     #[tokio::test]
