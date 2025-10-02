@@ -16,11 +16,15 @@ serde = { version = "1.0.219", features = ["default", "derive"] }
 saphyr = { version = "0.0.6", features = ["default", "encoding"] }
 async-trait = { version = "0.1.89" }
 arc-swap = { version = "1.7.1" }
-sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
 chrono = { version = "0.4.42", features = ["default", "serde"] }
+# Registry dependencies
 aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
-aws-sdk-s3={version = "1.106.0"}
+aws-sdk-s3 = { version = "1.106.0" }
 url = "2.5.7"
+# Online store dependencies
+sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
+redis = { version = "0.32.6", features = ["default", "tokio-comp", "safe_iterators"] }
+futures = "0.3.31"
 
 
 [build-dependencies]

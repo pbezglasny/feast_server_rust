@@ -39,7 +39,7 @@ pub struct SqliteStoreRow {
 }
 
 impl SqliteStoreRow {
-    fn converto_to_online_store_row(self, feature_view_name: &str) -> OnlineStoreRow {
+    fn convert_to_online_store_row(self, feature_view_name: &str) -> OnlineStoreRow {
         OnlineStoreRow {
             feature_view_name: feature_view_name.to_owned(),
             entity_key: self.entity_key,
@@ -57,7 +57,7 @@ impl FromRow<'_, SqliteRow> for SqliteStoreRow {
         let feature_name: String = row.try_get("feature_name")?;
         let value: Vec<u8> = row.try_get("value")?;
         let event_ts: DateTime<Utc> = row.try_get("event_ts")?;
-        let created_ts: DateTime<Utc> = row.try_get("event_ts")?;
+        let created_ts: DateTime<Utc> = row.try_get("created_ts")?;
         Ok(Self {
             entity_key,
             feature_name,
@@ -88,8 +88,12 @@ impl OnlineStore for SqliteOnlineStore {
             .iter()
             .map(|key| serialize_key(key, EntityKeySerializationVersion::V3))
             .collect::<Result<Vec<_>>>()?;
+        if serialized_keys.is_empty() || requested_feature_names.is_empty() {
+            return Ok(vec![]);
+        }
         let entity_keys_parameters = format!("?{}", ", ?".repeat(serialized_keys.len() - 1));
         let feature_parameters = format!("?{}", ", ?".repeat(requested_feature_names.len() - 1));
+        // TODO Replace to QueryBuilder
         let query = format!(
             "SELECT * FROM {} where entity_key in ({}) AND feature_name in ({})",
             table_name, entity_keys_parameters, feature_parameters
@@ -104,7 +108,7 @@ impl OnlineStore for SqliteOnlineStore {
         let result: Vec<SqliteStoreRow> = sqlx_query.fetch_all(&mut *connection).await?;
         Ok(result
             .into_iter()
-            .map(|r| r.converto_to_online_store_row(feature_view))
+            .map(|r| r.convert_to_online_store_row(feature_view))
             .collect())
     }
 }

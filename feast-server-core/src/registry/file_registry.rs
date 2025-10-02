@@ -166,7 +166,7 @@ impl FeatureRegistryService for FeatureRegistryProto {
 mod tests {
     use crate::model::{GetOnlineFeatureRequest, RequestedFeature};
     use crate::registry::FeatureRegistryService;
-    use crate::registry::file_feature_registry::FeatureRegistryProto;
+    use crate::registry::file_registry::FeatureRegistryProto;
     use anyhow::Result;
     use std::sync::Arc;
 

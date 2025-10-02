@@ -41,7 +41,7 @@ fn serialize_value(value: &Value) -> Result<Vec<u8>> {
     }
 }
 
-fn deserialize_val(bytes: &[u8], mut idx: usize) -> (Result<(Val, usize)>) {
+fn deserialize_val(bytes: &[u8], mut idx: usize) -> Result<(Val, usize)> {
     let value_type_int: i32 = i32::from_le_bytes(bytes[idx..idx + 4].try_into()?);
     let value_type = Enum::try_from(value_type_int).with_context(|| {
         format!(
