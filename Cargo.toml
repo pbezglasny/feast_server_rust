@@ -4,6 +4,10 @@ description = "Feat's feature server implemented in Rust"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+strip = true
+lto = true
+
 
 [workspace]
 members = [
