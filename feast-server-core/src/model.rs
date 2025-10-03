@@ -7,11 +7,11 @@ use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{Value, value_type};
+use crate::feast::types::{value_type, Value};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
 use chrono::{DateTime, Utc};
 use prost::Message;
 use serde::ser::Error as SerdeError;
@@ -21,6 +21,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
+
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize, Serialize)]
@@ -132,7 +133,6 @@ impl fmt::Debug for ValueWrapper {
 pub struct FeatureResults {
     pub values: Vec<ValueWrapper>,
     pub statuses: Vec<FeatureStatus>,
-    // #[serde(with = "chrono::serde::ts_seconds")]
     pub event_timestamps: Vec<DateTime<Utc>>,
 }
 

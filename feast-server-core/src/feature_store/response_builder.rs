@@ -7,7 +7,7 @@ use crate::model::{
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
-use chrono::DateTime;
+use chrono::{DateTime, SubsecRound};
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 
@@ -53,11 +53,7 @@ impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlin
             let value = ValueWrapper::from_bytes(&row.value)?;
             entry_values.insert(
                 row.feature_name,
-                (
-                    value.0.val.unwrap(),
-                    FeatureStatus::Present,
-                    SystemTime::now(),
-                ),
+                (value.0.val.unwrap(), FeatureStatus::Present, row.event_ts),
             );
         }
 
@@ -91,7 +87,7 @@ impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlin
                             feature_result.statuses.push(FeatureStatus::NotFound);
                             feature_result
                                 .event_timestamps
-                                .push(DateTime::from(SystemTime::UNIX_EPOCH));
+                                .push(DateTime::from(SystemTime::UNIX_EPOCH).round_subsecs(0));
                         }
                         Some((val, status, event_ts)) => {
                             feature_result
