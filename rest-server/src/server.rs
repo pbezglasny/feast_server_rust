@@ -1,14 +1,14 @@
-use anyhow::Result;
 use anyhow::anyhow;
+use anyhow::Result;
 use axum::routing::get;
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum_prometheus::PrometheusMetricLayer;
 use axum_server::tls_rustls::RustlsConfig;
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::GetOnlineFeatureRequest;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Clone)]
 pub struct FeastServer {
@@ -38,25 +38,22 @@ impl Default for ServerConfig {
 pub async fn start_server(
     server_config: ServerConfig,
     feature_store: FeatureStore,
-    _enable_metrics: bool,
+    metrics_enabled: bool,
 ) -> Result<()> {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
-            }),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
     let server = FeastServer {
         feature_store: Arc::new(feature_store),
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/get-online-features", post(handle_feature_reqeust))
         .route("/health", get(|| async { StatusCode::OK }))
         .with_state(server);
+    if metrics_enabled {
+        let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+        app = app
+            .route("/metrics", get(|| async move { metric_handle.render() }))
+            .layer(prometheus_layer);
+    }
 
     let addr: SocketAddr = format!("{}:{}", server_config.host, server_config.port)
         .to_socket_addrs()?
@@ -104,7 +101,7 @@ async fn handle_feature_reqeust(
 
 #[cfg(test)]
 mod tests {
-    use super::{ServerConfig, start_server};
+    use super::{start_server, ServerConfig};
     use anyhow::Result;
     use feast_server_core::feature_store::FeatureStore;
     use feast_server_core::onlinestore::sqlite_onlinestore::{

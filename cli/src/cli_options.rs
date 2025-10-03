@@ -15,6 +15,18 @@ pub enum LogLevel {
     Critical,
 }
 
+impl From<LogLevel> for tracing::Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Warning => tracing::Level::WARN,
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Critical => tracing::Level::ERROR,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
     /// Start a feature server locally on a given port

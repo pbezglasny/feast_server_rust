@@ -4,6 +4,9 @@ use clap::Parser;
 use feast_server_core::config::RepoConfig;
 use saphyr::{LoadableYamlNode, Yaml};
 use std::fs;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod cli_options;
 
@@ -20,6 +23,15 @@ async fn main() -> Result<()> {
         feature_store_yaml,
         command,
     } = cli_opts;
+
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(tracing::Level::from(log_level).into())
+                .from_env_lossy(),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let cwd = chdir
         .or(std::env::var(FEATURE_REPO_DIR_ENV_VAR_ENV_VAR).ok())
