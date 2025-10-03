@@ -231,10 +231,9 @@ mod tests {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
         let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;
-        let sqlite_path =
-            "/Users/pavel/work/rust/feast_rust/dev/golden_hornet/feature_repo/data/online_store.db";
+        let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
         let sqlite_store = SqliteOnlineStore::from_options(
-            sqlite_path,
+            &sqlite_path,
             "golden_hornet".to_string(),
             ConnectionOptions::default(),
         )

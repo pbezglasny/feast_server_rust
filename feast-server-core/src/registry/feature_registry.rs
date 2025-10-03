@@ -1,8 +1,7 @@
 use crate::config::{Provider, RegistryConfig, RegistryType};
 use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryProto, FeatureRegistryService};
-use anyhow::anyhow;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::sync::Arc;
 
 fn get_provider(provider_opt: Option<Provider>, path: &str) -> Provider {
@@ -10,7 +9,7 @@ fn get_provider(provider_opt: Option<Provider>, path: &str) -> Provider {
         provider
     } else if path.starts_with("s3://") {
         Provider::AWS
-    } else if path.starts_with("gs") {
+    } else if path.starts_with("gs://") {
         Provider::GCP
     } else {
         Provider::Local

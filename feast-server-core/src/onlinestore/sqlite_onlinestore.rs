@@ -142,8 +142,8 @@ mod test {
 
     #[tokio::test]
     async fn read_sqlite_trait() -> Result<()> {
-        let path =
-            "/Users/pavel/work/rust/feast_rust/dev/golden_hornet/feature_repo/data/online_store.db";
+        let project_dir = env!("CARGO_MANIFEST_DIR");
+        let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
 
         let entity_key = EntityKey {
             join_keys: vec!["driver_id".to_string()],
@@ -155,7 +155,7 @@ mod test {
         let features = vec!["conv_rate"];
 
         let sqlite_store = SqliteOnlineStore::from_options(
-            path,
+            &sqlite_path,
             "golden_hornet".to_string(),
             ConnectionOptions::default(),
         )
