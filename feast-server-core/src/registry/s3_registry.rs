@@ -1,6 +1,5 @@
 use crate::model::{FeatureView, GetOnlineFeatureRequest, RequestedFeature};
 use crate::registry::cached_registry::CachedFileRegistry;
-use crate::registry::feature_registry::FeatureRegistry;
 use crate::registry::{FeatureRegistryProto, FeatureRegistryService};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct S3Registry {
-    registry: Arc<FeatureRegistry>,
+    registry: FeatureRegistryProto,
 }
 
 fn parse_s3_url(s3_url: &str) -> Result<(String, String)> {
@@ -31,12 +30,10 @@ impl S3Registry {
         let config = aws_config::load_from_env().await;
         let client = Arc::new(aws_sdk_s3::Client::new(&config));
         let registry = S3Registry::from_s3(client, &bucket, &key).await?;
-        Ok(Self {
-            registry: Arc::new(FeatureRegistry::NonCached(registry)),
-        })
+        Ok(Self { registry })
     }
 
-    pub async fn new_cached(bucket_url: String, ttl: u32) -> Result<Self> {
+    /*    pub async fn new_cached(bucket_url: String, ttl: u64) -> Result<Self> {
         let (bucket, key) = parse_s3_url(&bucket_url)?;
         let config = aws_config::load_from_env().await;
         let client = Arc::new(aws_sdk_s3::Client::new(&config));
@@ -59,7 +56,7 @@ impl S3Registry {
         Ok(Self {
             registry: Arc::new(FeatureRegistry::CachedRegistry(cached_registry)),
         })
-    }
+    }*/
 
     async fn from_s3(
         s3_client: Arc<aws_sdk_s3::Client>,
@@ -84,12 +81,7 @@ impl FeatureRegistryService for S3Registry {
         &self,
         request: Arc<GetOnlineFeatureRequest>,
     ) -> Result<HashMap<RequestedFeature, FeatureView>> {
-        match self.registry.as_ref() {
-            FeatureRegistry::NonCached(registry) => registry.request_to_view_keys(request).await,
-            FeatureRegistry::CachedRegistry(registry) => {
-                registry.request_to_view_keys(request).await
-            }
-        }
+        self.registry.request_to_view_keys(request).await
     }
 }
 

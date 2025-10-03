@@ -21,13 +21,13 @@ pub enum RegistryType {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RegistryConfig {
-    path: String,
-    cache_ttl_seconds: Option<u64>,
-    registry_type: RegistryType,
-    account: Option<String>,
-    user: Option<String>,
-    password: Option<String>,
-    role: Option<String>,
+    pub path: String,
+    pub cache_ttl_seconds: Option<u64>,
+    pub registry_type: RegistryType,
+    pub account: Option<String>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+    pub role: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -56,7 +56,7 @@ pub enum EntityKeySerializationVersion {
 pub struct RepoConfig {
     pub project: String,
     pub project_description: Option<String>,
-    pub provider: Provider,
+    pub provider: Option<Provider>,
     pub registry: RegistryConfig,
     pub online_store: OnlineStoreConfig,
     pub entity_key_serialization_version: EntityKeySerializationVersion,
@@ -212,16 +212,15 @@ impl TryFrom<&Yaml<'_>> for RepoConfig {
             .get(&Yaml::Value(Scalar::String("project_description".into())))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let provider_str = mapping
+        let provider = mapping
             .get(&Yaml::Value(Scalar::String("provider".into())))
             .and_then(|v| v.as_str())
-            .ok_or(anyhow!("Missing or invalid 'provider' field"))?;
-        let provider = match provider_str {
-            "local" => Provider::Local,
-            "aws" => Provider::AWS,
-            "gcp" => Provider::GCP,
-            _ => return Err(anyhow!("Unsupported provider")),
-        };
+            .map(|s| match s.to_lowercase().as_str() {
+                "local" => Provider::Local,
+                "aws" => Provider::AWS,
+                "gcp" => Provider::GCP,
+                other => panic!("{}", format!("Unsupported provider type {}", other)),
+            });
         let registry_yaml = mapping
             .get(&Yaml::Value(Scalar::String("registry".into())))
             .ok_or(anyhow!("Missing 'registry' field"))?;

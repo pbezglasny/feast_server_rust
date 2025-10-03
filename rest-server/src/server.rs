@@ -1,7 +1,7 @@
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::anyhow;
 use axum::routing::get;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use axum_server::tls_rustls::RustlsConfig;
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::GetOnlineFeatureRequest;
@@ -16,11 +16,11 @@ pub struct FeastServer {
 }
 
 pub struct ServerConfig {
-    host: String,
-    port: u16,
-    tls_enabled: bool,
-    tls_cert_path: Option<String>,
-    tls_key_path: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub tls_enabled: bool,
+    pub tls_cert_path: Option<String>,
+    pub tls_key_path: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -35,7 +35,11 @@ impl Default for ServerConfig {
     }
 }
 
-pub async fn start_server(server_config: ServerConfig, feature_store: FeatureStore) -> Result<()> {
+pub async fn start_server(
+    server_config: ServerConfig,
+    feature_store: FeatureStore,
+    _enable_metrics: bool,
+) -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -100,7 +104,7 @@ async fn handle_feature_reqeust(
 
 #[cfg(test)]
 mod tests {
-    use super::{start_server, ServerConfig};
+    use super::{ServerConfig, start_server};
     use anyhow::Result;
     use feast_server_core::feature_store::FeatureStore;
     use feast_server_core::onlinestore::sqlite_onlinestore::{
@@ -125,7 +129,7 @@ mod tests {
         )
         .await?;
         let store = FeatureStore::new(Arc::new(feature_registry), Arc::new(sqlite_store));
-        start_server(ServerConfig::default(), store).await;
+        start_server(ServerConfig::default(), store, false).await?;
 
         Ok(())
     }
