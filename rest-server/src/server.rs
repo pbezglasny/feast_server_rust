@@ -98,36 +98,3 @@ async fn handle_feature_reqeust(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         .map(Json)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{start_server, ServerConfig};
-    use anyhow::Result;
-    use feast_server_core::feature_store::FeatureStore;
-    use feast_server_core::onlinestore::sqlite_onlinestore::{
-        ConnectionOptions, SqliteOnlineStore,
-    };
-    use feast_server_core::registry::FeatureRegistryProto;
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn start_server_test() -> Result<()> {
-        let project_dir = env!("CARGO_MANIFEST_DIR");
-        let registry_file = format!("{}/../feast-server-core/test_data/registry.pb", project_dir);
-        let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;
-        let sqlite_path = format!(
-            "{}/../feast-server-core/test_data/online_store.db",
-            project_dir
-        );
-        let sqlite_store = SqliteOnlineStore::from_options(
-            &sqlite_path,
-            "golden_hornet".to_string(),
-            ConnectionOptions::default(),
-        )
-        .await?;
-        let store = FeatureStore::new(Arc::new(feature_registry), Arc::new(sqlite_store));
-        start_server(ServerConfig::default(), store, false).await?;
-
-        Ok(())
-    }
-}

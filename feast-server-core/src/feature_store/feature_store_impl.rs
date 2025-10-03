@@ -29,14 +29,11 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let request_arc = Arc::new(request);
-        let feature_to_view: HashMap<RequestedFeature, FeatureView> = self
-            .registry
-            .request_to_view_keys(Arc::clone(&request_arc))
-            .await?;
+        let feature_to_view: HashMap<RequestedFeature, FeatureView> =
+            self.registry.request_to_view_keys(&request).await?;
 
         let keys_by_view: HashMap<&RequestedFeature, Result<Vec<EntityKey>>> =
-            feature_views_to_keys(&feature_to_view, &request_arc.entities);
+            feature_views_to_keys(&feature_to_view, &request.entities);
 
         let mut view_to_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
         let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
@@ -91,7 +88,7 @@ impl FeatureStore {
         if !errors.is_empty() {
             return Err(anyhow!("error while getting online data"));
         }
-        GetOnlineFeatureResponse::try_from((request_arc.entities.clone(), clean_data))
+        GetOnlineFeatureResponse::try_from((request.entities.clone(), clean_data))
     }
 }
 

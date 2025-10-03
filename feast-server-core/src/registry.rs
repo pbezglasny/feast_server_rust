@@ -16,6 +16,6 @@ pub use feature_registry::get_registry;
 pub trait FeatureRegistryService: Send + Sync {
     async fn request_to_view_keys(
         &self,
-        request: Arc<GetOnlineFeatureRequest>,
+        request: &GetOnlineFeatureRequest,
     ) -> Result<HashMap<RequestedFeature, FeatureView>>;
 }

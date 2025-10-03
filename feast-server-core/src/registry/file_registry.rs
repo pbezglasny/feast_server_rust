@@ -155,9 +155,9 @@ impl FeatureRegistryProto {
 impl FeatureRegistryService for FeatureRegistryProto {
     async fn request_to_view_keys(
         &self,
-        request: Arc<GetOnlineFeatureRequest>,
+        request: &GetOnlineFeatureRequest,
     ) -> Result<HashMap<RequestedFeature, FeatureView>> {
-        let requested_features = RequestedFeatures::from(request.as_ref());
+        let requested_features = RequestedFeatures::from(request);
         self.get_feature_views(requested_features)
     }
 }
@@ -193,9 +193,8 @@ mod tests {
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()];
-        let request_arc = Arc::new(request_obj);
         let result = feature_registry_service
-            .request_to_view_keys(request_arc)
+            .request_to_view_keys(&request_obj)
             .await?;
         println!("{:?}", result);
         Ok(())
@@ -209,9 +208,8 @@ mod tests {
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
         request_obj.feature_service = Some("driver_activity_v4".to_string());
-        let request_arc = Arc::new(request_obj);
         let result = feature_registry_service
-            .request_to_view_keys(request_arc)
+            .request_to_view_keys(&request_obj)
             .await?;
         println!("{:?}", result);
         Ok(())

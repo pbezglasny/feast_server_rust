@@ -79,7 +79,7 @@ impl S3Registry {
 impl FeatureRegistryService for S3Registry {
     async fn request_to_view_keys(
         &self,
-        request: Arc<GetOnlineFeatureRequest>,
+        request: &GetOnlineFeatureRequest,
     ) -> Result<HashMap<RequestedFeature, FeatureView>> {
         self.registry.request_to_view_keys(request).await
     }
@@ -97,9 +97,7 @@ mod tests {
         let s3_registry = super::S3Registry::new_non_cached(buket_url).await?;
         let mut request_obj = GetOnlineFeatureRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()];
-        let result = s3_registry
-            .request_to_view_keys(Arc::new(request_obj))
-            .await?;
+        let result = s3_registry.request_to_view_keys(&request_obj).await?;
         println!("{:#?}", result);
         Ok(())
     }

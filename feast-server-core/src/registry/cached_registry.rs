@@ -53,7 +53,7 @@ fn start_refresh_task<F, Fut>(
 impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
-        request: Arc<GetOnlineFeatureRequest>,
+        request: &GetOnlineFeatureRequest,
     ) -> Result<HashMap<RequestedFeature, FeatureView>> {
         let registry = self.inner.load();
         registry.request_to_view_keys(request).await
