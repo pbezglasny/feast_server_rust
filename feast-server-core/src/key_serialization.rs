@@ -71,6 +71,13 @@ fn deserialize_val(bytes: &[u8], mut idx: usize) -> Result<(Val, usize)> {
             idx += 8;
             Ok((Val::Int64Val(val_int), idx))
         }
+        Enum::Bytes => {
+            let size: u32 = u32::from_le_bytes(bytes[idx..idx + 4].try_into()?);
+            idx += 4;
+            let val_bytes = bytes[idx..idx + size as usize].to_vec();
+            idx += size as usize;
+            Ok((Val::BytesVal(val_bytes), idx))
+        }
         Enum::String => {
             let size: u32 = u32::from_le_bytes(bytes[idx..idx + 4].try_into()?);
             idx += 4;

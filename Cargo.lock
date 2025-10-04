@@ -1250,6 +1250,7 @@ dependencies = [
  "serde",
  "sqlx",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -2676,7 +2677,6 @@ dependencies = [
  "axum-prometheus",
  "axum-server",
  "feast-server-core",
- "tokio",
  "tracing",
 ]
 

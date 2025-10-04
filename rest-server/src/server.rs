@@ -45,7 +45,7 @@ pub async fn start_server(
     };
 
     let mut app = Router::new()
-        .route("/get-online-features", post(handle_feature_reqeust))
+        .route("/get-online-features", post(handle_feature_request))
         .route("/health", get(|| async { StatusCode::OK }))
         .with_state(server);
     if metrics_enabled {
@@ -87,7 +87,7 @@ pub async fn start_server(
     }
 }
 
-async fn handle_feature_reqeust(
+async fn handle_feature_request(
     State(server): State<FeastServer>,
     Json(get_online_feature_request): Json<GetOnlineFeatureRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {

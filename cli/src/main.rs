@@ -47,6 +47,9 @@ async fn main() -> Result<()> {
         .unwrap();
     let yaml_str = fs::read_to_string(config_path)?;
     let conf = Yaml::load_from_str(&yaml_str)?;
+    if conf.is_empty() {
+        return Err(anyhow!("Empty configuration file"));
+    }
     let repo_config = RepoConfig::try_from(&conf[0])?;
 
     match command {

@@ -27,6 +27,7 @@ pub async fn get_registry(
             Provider::Local => {
                 if let Some(ttl) = conf.cache_ttl_seconds {
                     let producer_fn = {
+                        // TODO replace to PathBuf
                         let path = format!("{}/{}", path_prefix, conf.path);
                         move || {
                             let path = path.clone();

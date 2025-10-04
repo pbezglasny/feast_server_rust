@@ -8,6 +8,7 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::JoinSet;
+use tracing;
 
 pub struct FeatureStore {
     registry: Arc<dyn FeatureRegistryService>,
@@ -47,7 +48,8 @@ impl FeatureStore {
                         .or_default();
                 }
                 Err(e) => {
-                    eprintln!("error building keys: {:?}", e);
+                    // TODO
+                    tracing::warn!("Error building keys: {:?}", e);
                 }
             }
         }
@@ -76,7 +78,7 @@ impl FeatureStore {
         while let Some(res) = join_set.join_next().await {
             match res {
                 Ok(val) => feature_rows.push(val),
-                Err(e) => eprintln!("Task panicked: {:?}", e),
+                Err(e) => return Err(anyhow!("Error joining online feature task: {:?}", e)),
             }
         }
         let mut errors = vec![];
@@ -92,6 +94,7 @@ impl FeatureStore {
     }
 }
 
+// TODO replace return type to Result<RequestedFeature, Vec<EntityKey>>
 fn feature_views_to_keys<'a>(
     feature_to_view: &'a HashMap<RequestedFeature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
