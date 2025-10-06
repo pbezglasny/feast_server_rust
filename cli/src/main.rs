@@ -1,7 +1,7 @@
 use crate::cli_options::{CliCommand, CliOptions};
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use feast_server_core::config::RepoConfig;
+use feast_server_core::config::{Provider, RepoConfig};
 use saphyr::{LoadableYamlNode, Yaml};
 use std::fs;
 use std::path::PathBuf;
@@ -60,7 +60,6 @@ async fn main() -> Result<()> {
             host,
             port,
             r#type,
-            // registry_ttl_sec,
             key,
             cert,
             metrics_enabled,
@@ -69,6 +68,9 @@ async fn main() -> Result<()> {
                 return Err(anyhow!(
                     "Both --key and --cert must be provided to enable TLS"
                 ));
+            }
+            if let Some(Provider::Unknown(other)) = repo_config.provider {
+                return Err(anyhow!("Unsupported provider: {}", other));
             }
             let tls_enabled = key.is_some() && cert.is_some();
             let registry = feast_server_core::registry::get_registry(

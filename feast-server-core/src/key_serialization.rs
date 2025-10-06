@@ -1,8 +1,8 @@
 use crate::config::EntityKeySerializationVersion;
-use crate::feast::types::EntityKey;
 use crate::feast::types::Value;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum;
+use crate::feast::types::{BytesList, EntityKey};
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 
@@ -84,13 +84,6 @@ fn deserialize_val(bytes: &[u8], mut idx: usize) -> Result<(Val, usize)> {
             let val_str = String::from_utf8(bytes[idx..idx + size as usize].into())?;
             idx += size as usize;
             Ok((Val::StringVal(val_str), idx))
-        }
-        Enum::BytesList => {
-            let size: u32 = u32::from_le_bytes(bytes[idx..idx + 4].try_into()?);
-            idx += 4;
-            let val_bytes = bytes[idx..idx + size as usize].to_vec();
-            idx += size as usize;
-            Ok((Val::BytesVal(val_bytes), idx))
         }
         other => Err(anyhow!(
             "Unsupported serialized type {}",

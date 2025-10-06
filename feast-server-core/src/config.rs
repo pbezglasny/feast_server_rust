@@ -9,6 +9,7 @@ pub enum Provider {
     Local,
     AWS,
     GCP,
+    Unknown(String),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -219,8 +220,8 @@ impl TryFrom<&Yaml<'_>> for RepoConfig {
                 "local" => Provider::Local,
                 "aws" => Provider::AWS,
                 "gcp" => Provider::GCP,
-                other => panic!("{}", format!("Unsupported provider type {}", other)),
-            });
+                other => Provider::Unknown(other.to_string()),
+            })
         let registry_yaml = mapping
             .get(&Yaml::Value(Scalar::String("registry".into())))
             .ok_or(anyhow!("Missing 'registry' field"))?;

@@ -88,7 +88,10 @@ impl FeatureStore {
             .flatten()
             .collect();
         if !errors.is_empty() {
-            return Err(anyhow!("error while getting online data"));
+            return Err(anyhow!(
+                "error while getting online data, errors: {:?}",
+                errors
+            ));
         }
         GetOnlineFeatureResponse::try_from((request.entities.clone(), clean_data))
     }
