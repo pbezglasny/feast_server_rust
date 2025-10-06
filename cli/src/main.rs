@@ -4,6 +4,7 @@ use clap::Parser;
 use feast_server_core::config::RepoConfig;
 use saphyr::{LoadableYamlNode, Yaml};
 use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -11,7 +12,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 mod cli_options;
 
-const FEATURE_REPO_DIR_ENV_VAR_ENV_VAR: &str = "FEATURE_REPO_DIR_ENV_VAR";
+const FEATURE_REPO_DIR_ENV_VAR: &str = "FEATURE_REPO_DIR_ENV_VAR";
 const FEAST_FS_YAML_FILE_PATH_ENV_VAR: &str = "FEAST_FS_YAML_FILE_PATH";
 const DEFAULT_FEATURE_STORE_FILE_NAME: &str = "feature_store.yaml";
 
@@ -34,19 +35,20 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cwd = chdir
-        .or(std::env::var(FEATURE_REPO_DIR_ENV_VAR_ENV_VAR).ok())
-        .unwrap_or(std::env::current_dir().map(|p| p.into_os_string().into_string().unwrap())?);
+    let cwd = if let Some(path) = chdir.or_else(|| std::env::var(FEATURE_REPO_DIR_ENV_VAR).ok()) {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir()?
+    };
+    let cwd_str = cwd
+        .to_str()
+        .ok_or_else(|| anyhow!("Feature repository path contains invalid UTF-8"))?;
 
     let feature_store_yaml = feature_store_yaml
         .or(std::env::var(FEAST_FS_YAML_FILE_PATH_ENV_VAR).ok())
         .unwrap_or(DEFAULT_FEATURE_STORE_FILE_NAME.to_string());
-    let config_path = std::path::Path::new(&cwd)
-        .join(&feature_store_yaml)
-        .into_os_string()
-        .into_string()
-        .unwrap();
-    let yaml_str = fs::read_to_string(config_path)?;
+    let config_path = cwd.join(&feature_store_yaml);
+    let yaml_str = fs::read_to_string(&config_path)?;
     let conf = Yaml::load_from_str(&yaml_str)?;
     if conf.is_empty() {
         return Err(anyhow!("Empty configuration file"));
@@ -72,13 +74,13 @@ async fn main() -> Result<()> {
             let registry = feast_server_core::registry::get_registry(
                 &repo_config.registry,
                 repo_config.provider.clone(),
-                Some(&cwd),
+                Some(cwd_str),
             )
             .await?;
             let online_store = feast_server_core::onlinestore::get_online_store(
                 &repo_config.online_store,
                 &repo_config.project,
-                Some(&cwd),
+                Some(cwd_str),
             )
             .await?;
             let feature_store =

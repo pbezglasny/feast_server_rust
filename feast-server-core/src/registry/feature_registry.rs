@@ -2,6 +2,7 @@ use crate::config::{Provider, RegistryConfig, RegistryType};
 use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryProto, FeatureRegistryService};
 use anyhow::{Result, anyhow};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 fn get_provider(provider_opt: Option<Provider>, path: &str) -> Provider {
@@ -27,10 +28,11 @@ pub async fn get_registry(
             Provider::Local => {
                 if let Some(ttl) = conf.cache_ttl_seconds {
                     let producer_fn = {
-                        // TODO replace to PathBuf
-                        let path = format!("{}/{}", path_prefix, conf.path);
+                        let mut path_buf = PathBuf::new();
+                        path_buf.push(&path_prefix);
+                        path_buf.push(conf.path.clone());
                         move || {
-                            let path = path.clone();
+                            let path = path_buf.clone().into_os_string().into_string().unwrap();
                             async move { FeatureRegistryProto::from_path(&path) }
                         }
                     };
