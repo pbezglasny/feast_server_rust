@@ -9,11 +9,12 @@ mod feature_registry;
 pub mod file_registry;
 mod s3_registry;
 
-pub use file_registry::FeatureRegistryProto;
 pub use feature_registry::get_registry;
+pub use file_registry::FeatureRegistryProto;
 
 #[async_trait]
 pub trait FeatureRegistryService: Send + Sync {
+    /// Get Feature View objects for the requested features in the request
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,

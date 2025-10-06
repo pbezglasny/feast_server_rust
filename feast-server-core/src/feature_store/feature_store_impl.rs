@@ -7,6 +7,7 @@ use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing;
 
@@ -41,6 +42,9 @@ impl FeatureStore {
         // feature view name to features
         let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
 
+        // feature view name to ttl
+        let mut view_to_ttl: HashMap<String, Duration> = HashMap::new();
+
         for (view_name, result_keys) in keys_by_view.into_iter() {
             view_to_keys.insert(view_name.feature_view_name.clone(), result_keys);
             view_features
@@ -48,11 +52,12 @@ impl FeatureStore {
                 .or_default();
         }
 
-        for (requested_feature, _fv) in feature_to_view.into_iter() {
+        for (requested_feature, fv) in feature_to_view.into_iter() {
             view_features
                 .entry(requested_feature.feature_view_name.clone())
                 .or_default()
                 .push(requested_feature.feature_name.clone());
+            view_to_ttl.insert(fv.name, fv.ttl);
         }
 
         let mut join_set = JoinSet::new();
@@ -87,7 +92,7 @@ impl FeatureStore {
                 errors
             ));
         }
-        GetOnlineFeatureResponse::try_from((request.entities.clone(), clean_data))
+        GetOnlineFeatureResponse::try_from(request.entities, clean_data, view_to_ttl)
     }
 }
 

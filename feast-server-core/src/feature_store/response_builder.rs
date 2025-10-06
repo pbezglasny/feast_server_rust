@@ -9,18 +9,20 @@ use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
 use chrono::{DateTime, SubsecRound};
 use std::collections::{HashMap, HashSet};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
-pub struct ResponseBuilder {
+struct ResponseBuilder {
     entity_keys: HashMap<String, Vec<EntityId>>,
     feature_names: Vec<String>,
 }
 
-impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlineFeatureResponse {
-    type Error = Error;
-
-    fn try_from(value: (HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)) -> Result<Self> {
-        let (entity_keys, rows) = value;
+impl GetOnlineFeatureResponse {
+    /// Build GetOnlineFeatureResponse from entity keys of request data and online store rows
+    pub fn try_from(
+        entity_keys: HashMap<String, Vec<EntityId>>,
+        rows: Vec<OnlineStoreRow>,
+        feature_view_to_ttl: HashMap<String, Duration>,
+    ) -> Result<Self> {
         let mut feature_values: HashMap<
             String,
             HashMap<EntityId, HashMap<String, (Val, FeatureStatus, SystemTime)>>,
@@ -51,9 +53,20 @@ impl TryFrom<(HashMap<String, Vec<EntityId>>, Vec<OnlineStoreRow>)> for GetOnlin
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
             let value = ValueWrapper::from_bytes(&row.value)?;
+            let ttl = feature_view_to_ttl.get(&row.feature_view_name);
+            let status = if let Some(ttl) = ttl {
+                let expiration_time = row.event_ts + *ttl;
+                if SystemTime::now() > expiration_time {
+                    FeatureStatus::OutsideMaxAge
+                } else {
+                    FeatureStatus::Present
+                }
+            } else {
+                FeatureStatus::Present
+            };
             entry_values.insert(
                 row.feature_name,
-                (value.0.val.unwrap(), FeatureStatus::Present, row.event_ts),
+                (value.0.val.unwrap(), status, row.event_ts),
             );
         }
 
