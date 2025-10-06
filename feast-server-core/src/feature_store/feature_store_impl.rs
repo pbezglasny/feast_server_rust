@@ -33,25 +33,19 @@ impl FeatureStore {
         let feature_to_view: HashMap<RequestedFeature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
 
-        let keys_by_view: HashMap<&RequestedFeature, Result<Vec<EntityKey>>> =
-            feature_views_to_keys(&feature_to_view, &request.entities);
+        let keys_by_view: HashMap<&RequestedFeature, Vec<EntityKey>> =
+            feature_views_to_keys(&feature_to_view, &request.entities)?;
 
+        // feature view name to entity keys
         let mut view_to_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
+        // feature view name to features
         let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
 
         for (view_name, result_keys) in keys_by_view.into_iter() {
-            match result_keys {
-                Ok(kv) => {
-                    view_to_keys.insert(view_name.feature_view_name.clone(), kv);
-                    view_features
-                        .entry(view_name.feature_view_name.clone())
-                        .or_default();
-                }
-                Err(e) => {
-                    // TODO
-                    tracing::warn!("Error building keys: {:?}", e);
-                }
-            }
+            view_to_keys.insert(view_name.feature_view_name.clone(), result_keys);
+            view_features
+                .entry(view_name.feature_view_name.clone())
+                .or_default();
         }
 
         for (requested_feature, _fv) in feature_to_view.into_iter() {
@@ -97,11 +91,10 @@ impl FeatureStore {
     }
 }
 
-// TODO replace return type to Result<RequestedFeature, Vec<EntityKey>>
 fn feature_views_to_keys<'a>(
     feature_to_view: &'a HashMap<RequestedFeature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
-) -> HashMap<&'a RequestedFeature, Result<Vec<EntityKey>>> {
+) -> Result<HashMap<&'a RequestedFeature, Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
     let mut entity_key_type: HashMap<(&str, &str), value_type::Enum> = HashMap::new();
     let mut entity_to_view: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -159,10 +152,10 @@ fn feature_views_to_keys<'a>(
                     "Cannot build entity keys for feature {}_{}",
                     requested_feature.feature_view_name,
                     requested_feature.feature_name
-                )),
+                ))?,
         );
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

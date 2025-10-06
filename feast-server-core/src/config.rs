@@ -221,7 +221,7 @@ impl TryFrom<&Yaml<'_>> for RepoConfig {
                 "aws" => Provider::AWS,
                 "gcp" => Provider::GCP,
                 other => Provider::Unknown(other.to_string()),
-            })
+            });
         let registry_yaml = mapping
             .get(&Yaml::Value(Scalar::String("registry".into())))
             .ok_or(anyhow!("Missing 'registry' field"))?;
