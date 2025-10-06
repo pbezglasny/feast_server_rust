@@ -16,3 +16,4 @@ saphyr = { workspace = true }
 tracing = {workspace = true}
 clap = { version = "4.4.7", features = ["derive"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+axum-server = "0.7.2"

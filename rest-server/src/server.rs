@@ -1,7 +1,7 @@
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::anyhow;
 use axum::routing::get;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use axum_prometheus::PrometheusMetricLayer;
 use axum_server::tls_rustls::RustlsConfig;
 use feast_server_core::feature_store::FeatureStore;
@@ -39,6 +39,7 @@ pub async fn start_server(
     server_config: ServerConfig,
     feature_store: FeatureStore,
     metrics_enabled: bool,
+    shutdown_handler: axum_server::Handle,
 ) -> Result<()> {
     let server = FeastServer {
         feature_store: Arc::new(feature_store),
@@ -76,11 +77,13 @@ pub async fn start_server(
             .await
             .map_err(|e| anyhow!("Failed to load TLS config: {}", e))?;
         axum_server::bind_rustls(addr, rustls_config)
+            .handle(shutdown_handler)
             .serve(app.into_make_service())
             .await?;
         Ok(())
     } else {
         axum_server::bind(addr)
+            .handle(shutdown_handler)
             .serve(app.into_make_service())
             .await?;
         Ok(())

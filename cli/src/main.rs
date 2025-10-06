@@ -4,6 +4,7 @@ use clap::Parser;
 use feast_server_core::config::RepoConfig;
 use saphyr::{LoadableYamlNode, Yaml};
 use std::fs;
+use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -91,8 +92,23 @@ async fn main() -> Result<()> {
                         tls_cert_path: cert,
                         tls_key_path: key,
                     };
-                    rest_server::server::start_server(server_config, feature_store, metrics_enabled)
-                        .await?
+                    let handler = axum_server::Handle::new();
+                    let mut sigterm =
+                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+                    tokio::select! {
+                    res = rest_server::server::start_server(server_config, feature_store, metrics_enabled, handler.clone()) => {
+                    res?
+                    }
+                    _ = sigterm.recv() => {
+                        tracing::info!("Received SIGTERM, shutting down...");
+                        handler.graceful_shutdown(Some(Duration::from_secs(5)));
+                        }
+                    _ = tokio::signal::ctrl_c() => {
+                            tracing::info!("Received Ctrl+C, shutting down...");
+                            handler.graceful_shutdown(Some(Duration::from_secs(5)));
+                        }
+
+                    }
                 }
                 cli_options::ServeType::Grpc => {
                     return Err(anyhow!("Grpc server is not implemented yet"));
