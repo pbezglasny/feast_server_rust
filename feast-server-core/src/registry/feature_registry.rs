@@ -26,13 +26,14 @@ pub async fn get_registry(
     match &conf.registry_type {
         RegistryType::File => match get_provider(provider, conf.path.as_str()) {
             Provider::Local => {
+                let mut path_buf = PathBuf::new();
+                path_buf.push(path_prefix);
+                path_buf.push(conf.path.as_str());
+                let path = path_buf.clone().into_os_string().into_string().unwrap();
                 if let Some(ttl) = conf.cache_ttl_seconds {
                     let producer_fn = {
-                        let mut path_buf = PathBuf::new();
-                        path_buf.push(&path_prefix);
-                        path_buf.push(conf.path.clone());
                         move || {
-                            let path = path_buf.clone().into_os_string().into_string().unwrap();
+                            let path = path.clone();
                             async move { FeatureRegistryProto::from_path(&path) }
                         }
                     };
@@ -44,12 +45,11 @@ pub async fn get_registry(
                         .await;
                     Ok(cached_registry)
                 } else {
-                    let path = format!("{}/{}", path_prefix, conf.path);
-                    let registry = FeatureRegistryProto::from_path(&path)?;
+                    let registry = FeatureRegistryProto::from_path(path.as_str())?;
                     Ok(Arc::new(registry))
                 }
             }
-            _ => Err(anyhow!("")),
+            _ => Err(anyhow!("Unsupported provider for file registry")),
         },
         _ => Err(anyhow::anyhow!("Only file registry is supported now")),
     }
