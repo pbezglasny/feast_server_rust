@@ -45,6 +45,8 @@ pub async fn start_server(
         feature_store: Arc::new(feature_store),
     };
 
+    let trace = tower_http::trace::TraceLayer::new_for_http();
+
     let mut app = Router::new()
         .route("/get-online-features", post(handle_feature_request))
         .route("/health", get(|| async { StatusCode::OK }))
@@ -53,7 +55,8 @@ pub async fn start_server(
         let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
         app = app
             .route("/metrics", get(|| async move { metric_handle.render() }))
-            .layer(prometheus_layer);
+            .layer(prometheus_layer)
+            .layer(trace)
     }
 
     let addr: SocketAddr = format!("{}:{}", server_config.host, server_config.port)
