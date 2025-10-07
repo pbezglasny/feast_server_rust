@@ -91,7 +91,9 @@ mod tests {
     use crate::model::GetOnlineFeatureRequest;
     use anyhow::Result;
     use std::sync::Arc;
+    
     #[tokio::test]
+    #[ignore]
     async fn read_registry_from_s3() -> Result<()> {
         let buket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
         let s3_registry = super::S3Registry::new_non_cached(buket_url).await?;
