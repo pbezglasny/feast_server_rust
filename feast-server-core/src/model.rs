@@ -7,11 +7,11 @@ use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{value_type, Value};
+use crate::feast::types::{Value, value_type};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use chrono::{DateTime, Utc};
 use prost::Message;
 use serde::ser::Error as SerdeError;
@@ -62,12 +62,12 @@ pub struct GetOnlineFeatureRequest {
     pub full_feature_names: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GetOnlineFeatureResponseMetadata {
     pub feature_names: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FeatureStatus {
     Invalid,
@@ -77,6 +77,7 @@ pub enum FeatureStatus {
     OutsideMaxAge,
 }
 
+#[derive(PartialEq, Clone)]
 pub struct ValueWrapper(pub Value);
 
 impl ValueWrapper {
@@ -130,14 +131,14 @@ impl fmt::Debug for ValueWrapper {
     }
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, PartialEq, Serialize)]
 pub struct FeatureResults {
     pub values: Vec<ValueWrapper>,
     pub statuses: Vec<FeatureStatus>,
     pub event_timestamps: Vec<DateTime<Utc>>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, PartialEq, Serialize)]
 pub struct GetOnlineFeatureResponse {
     pub metadata: GetOnlineFeatureResponseMetadata,
     pub results: Vec<FeatureResults>,

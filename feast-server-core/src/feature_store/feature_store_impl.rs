@@ -170,7 +170,9 @@ fn feature_views_to_keys<'a>(
 mod tests {
     use super::*;
     use crate::feast::types::{value, value_type};
-    use crate::model::{EntityId, Field, GetOnlineFeatureRequest};
+    use crate::model::{
+        EntityId, Field, GetOnlineFeatureRequest, GetOnlineFeatureResponseMetadata,
+    };
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
@@ -395,8 +397,38 @@ mod tests {
             ],
             full_feature_names: Some(false),
         };
-        let res = store.get_online_features(request).await?;
-        println!("{:?}", res);
+        let result = store.get_online_features(request).await?;
+        let metadata = GetOnlineFeatureResponseMetadata {
+            feature_names: vec![
+                "driver_id".to_string(),
+                "conv_rate".to_string(),
+                "acc_rate".to_string(),
+            ],
+        };
+        let results = vec![];
+        let expected = GetOnlineFeatureResponse { metadata, results };
+        assert_eq!(result.metadata.feature_names.len(), 3);
+        assert_eq!(result.results.len(), 3);
+        for (i, feature) in result.metadata.feature_names.iter().enumerate() {
+            match feature.as_str() {
+                "driver_id" => {
+                    let vec_res: Vec<Option<value::Val>> = result.results[i]
+                        .values
+                        .iter()
+                        .map(|v| v.clone().0.val)
+                        .collect();
+                    assert_eq!(
+                        vec_res,
+                        vec![
+                            Some(value::Val::Int64Val(1005)),
+                            Some(value::Val::Int64Val(1002)),
+                            Some(value::Val::Int64Val(2003))
+                        ]
+                    );
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
 }
