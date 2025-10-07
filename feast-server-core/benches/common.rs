@@ -10,6 +10,7 @@ use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, Sqli
 use feast_server_core::onlinestore::OnlineStore;
 use feast_server_core::registry::file_registry::FeatureRegistryProto;
 use feast_server_core::registry::FeatureRegistryService;
+use tokio::sync::OnceCell;
 
 fn manifest_path(relative: &str) -> String {
     format!("{}/{}", env!("CARGO_MANIFEST_DIR"), relative)
