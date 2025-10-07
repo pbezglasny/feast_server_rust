@@ -178,10 +178,9 @@ mod tests {
     #[tokio::test]
     async fn get_features_by_name() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
-        // let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let registry_file = "/media/pavel/data/work/rust/feast_server_rust/dev/careful_tomcat/feature_repo/data/registry.db";
+        let registry_file = format!("{}/test_data/registry.pb", project_dir);
 
-        let feature_registry_proto = FeatureRegistryProto::from_path(registry_file)?;
+        let feature_registry_proto = FeatureRegistryProto::from_path(&registry_file)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
