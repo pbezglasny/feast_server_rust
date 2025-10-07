@@ -129,7 +129,7 @@ fn feature_views_to_keys<'a>(
             .get(entity_id.as_str())
             .map(|s| *s)
             .unwrap_or(entity_id.as_str());
-        for feature_view_name in entity_to_view.remove(mapped_key).unwrap_or_default() {
+        for feature_view_name in entity_to_view.get(mapped_key).unwrap_or(&Vec::new()) {
             let mut value_entry = views_keys
                 .entry(feature_view_name)
                 .or_insert(Vec::with_capacity(entity_keys.len()));
