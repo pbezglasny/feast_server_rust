@@ -40,6 +40,7 @@ impl FeatureRegistryProto {
             .registry
             .feature_services
             .get(service_name)
+            // TODO use custom error type for 404 error
             .ok_or(anyhow!("Requested feature service not found"))?
             .clone();
         let mut result = HashMap::new();
@@ -69,17 +70,7 @@ impl FeatureRegistryProto {
                     service_name
                 ))?
                 .clone();
-            feature_view.entity_names = feature_view
-                .entity_names
-                .into_iter()
-                .map(|key_name| {
-                    projection
-                        .join_key_map
-                        .get(&key_name)
-                        .map(|val| val.to_owned())
-                        .unwrap_or(key_name)
-                })
-                .collect();
+            feature_view.join_key_map = Some(projection.join_key_map);
             for feature_name in projection.features {
                 let req_feature = RequestedFeature {
                     feature_view_name: projection.feature_view_name.clone(),
@@ -187,8 +178,10 @@ mod tests {
     #[tokio::test]
     async fn get_features_by_name() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
-        let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry_proto = FeatureRegistryProto::from_path(&registry_file)?;
+        // let registry_file = format!("{}/test_data/registry.pb", project_dir);
+        let registry_file = "/media/pavel/data/work/rust/feast_server_rust/dev/careful_tomcat/feature_repo/data/registry.db";
+
+        let feature_registry_proto = FeatureRegistryProto::from_path(registry_file)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();

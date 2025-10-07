@@ -3,7 +3,7 @@ use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value};
 use crate::key_serialization::deserialize_key;
 use crate::model::{
-    EntityId, FeatureResults, FeatureStatus, GetOnlineFeatureResponse, ValueWrapper,
+    EntityId, FeatureResults, FeatureStatus, FeatureView, GetOnlineFeatureResponse, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
@@ -17,11 +17,12 @@ struct ResponseBuilder {
 }
 
 impl GetOnlineFeatureResponse {
-    /// Build GetOnlineFeatureResponse from entity keys of request data and online store rows
+    /// Build GetOnlineFeatureResponse from entity keys of request data,
+    /// online store rows and feature view to ttl mapping.
     pub fn try_from(
         entity_keys: HashMap<String, Vec<EntityId>>,
         rows: Vec<OnlineStoreRow>,
-        feature_view_to_ttl: HashMap<String, Duration>,
+        feature_view_to_ttl: HashMap<String, FeatureView>,
     ) -> Result<Self> {
         let mut feature_values: HashMap<
             String,
@@ -54,8 +55,8 @@ impl GetOnlineFeatureResponse {
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
             let value = ValueWrapper::from_bytes(&row.value)?;
             let ttl = feature_view_to_ttl.get(&row.feature_view_name);
-            let status = if let Some(ttl) = ttl {
-                let expiration_time = row.event_ts + *ttl;
+            let status = if let Some(feature_view) = ttl {
+                let expiration_time = row.event_ts + feature_view.ttl;
                 if SystemTime::now() > expiration_time {
                     FeatureStatus::OutsideMaxAge
                 } else {

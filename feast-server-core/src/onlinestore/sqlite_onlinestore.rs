@@ -95,7 +95,8 @@ impl OnlineStore for SqliteOnlineStore {
         let feature_parameters = format!("?{}", ", ?".repeat(requested_feature_names.len() - 1));
         // TODO Replace to QueryBuilder
         let query = format!(
-            "SELECT * FROM {} where entity_key in ({}) AND feature_name in ({})",
+            "SELECT entity_key, feature_name, value, event_ts, created_ts \
+             FROM {} where entity_key in ({}) AND feature_name in ({})",
             table_name, entity_keys_parameters, feature_parameters
         );
         let mut sqlx_query = sqlx::query_as(&query);
@@ -137,8 +138,8 @@ impl SqliteOnlineStore {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::feast::types::Value;
     use crate::feast::types::value::Val;
+    use crate::feast::types::Value;
 
     #[tokio::test]
     async fn read_sqlite_trait() -> Result<()> {

@@ -57,6 +57,7 @@ impl EntityId {
 pub struct GetOnlineFeatureRequest {
     pub entities: HashMap<String, Vec<EntityId>>,
     pub feature_service: Option<String>,
+    #[serde(default)]
     pub features: Vec<String>,
     pub full_feature_names: Option<bool>,
 }
@@ -190,6 +191,7 @@ pub struct FeatureView {
     pub ttl: Duration,
     pub entity_names: Vec<String>,
     pub entity_columns: Vec<Field>,
+    pub join_key_map: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -227,7 +229,7 @@ pub enum RequestedFeatures {
     FeatureService(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RequestedFeature {
     pub feature_view_name: String,
     pub feature_name: String,
@@ -366,6 +368,7 @@ impl TryFrom<FeatureViewProto> for FeatureView {
                     value_type: ValueTypeEnum::try_from(col.value_type).unwrap(),
                 })
                 .collect(),
+            join_key_map: None,
         })
     }
 }
