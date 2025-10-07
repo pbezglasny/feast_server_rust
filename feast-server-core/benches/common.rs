@@ -31,22 +31,22 @@ pub fn registry_service() -> Arc<dyn FeatureRegistryService> {
         .clone()
 }
 
-static SQLITE_STORE: OnceLock<Arc<dyn OnlineStore>> = OnceLock::new();
+static SQLITE_STORE: OnceCell<Arc<dyn OnlineStore>> = OnceCell::const_new();
 
 pub async fn online_store() -> Result<Arc<dyn OnlineStore>> {
-    if let Some(existing) = SQLITE_STORE.get() {
-        return Ok(existing.clone());
-    }
-    let sqlite_path = manifest_path("test_data/online_store.db");
-    let store = SqliteOnlineStore::from_options(
-        &sqlite_path,
-        "golden_hornet".to_string(),
-        ConnectionOptions::default(),
-    )
-    .await?;
-    let store_arc: Arc<dyn OnlineStore> = Arc::new(store);
-    let _ = SQLITE_STORE.set(store_arc.clone());
-    Ok(store_arc)
+    SQLITE_STORE
+        .get_or_try_init(|| async {
+            let sqlite_path = manifest_path("test_data/online_store.db");
+            SqliteOnlineStore::from_options(
+                &sqlite_path,
+                "golden_hornet".to_string(),
+                ConnectionOptions::default(),
+            )
+            .await
+            .map(|store| Arc::new(store) as Arc<dyn OnlineStore>)
+        })
+        .await
+        .map(Clone::clone)
 }
 
 static FEATURE_STORE: OnceLock<Arc<FeatureStore>> = OnceLock::new();
