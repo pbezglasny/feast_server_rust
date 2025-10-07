@@ -126,7 +126,8 @@ fn feature_views_to_keys<'a>(
     let mut views_keys: HashMap<&str, Vec<EntityKey>> = HashMap::new();
     for (entity_id, entity_keys) in requested_entity_keys {
         let mapped_key = reverse_join_key_mapping
-            .remove(entity_id.as_str())
+            .get(entity_id.as_str())
+            .map(|s| *s)
             .unwrap_or(entity_id.as_str());
         for feature_view_name in entity_to_view.remove(mapped_key).unwrap_or_default() {
             let mut value_entry = views_keys
