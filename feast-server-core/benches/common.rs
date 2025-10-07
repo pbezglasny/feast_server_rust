@@ -49,17 +49,17 @@ pub async fn online_store() -> Result<Arc<dyn OnlineStore>> {
         .map(Clone::clone)
 }
 
-static FEATURE_STORE: OnceLock<Arc<FeatureStore>> = OnceLock::new();
+static FEATURE_STORE: OnceCell<Arc<FeatureStore>> = OnceCell::const_new();
 
 pub async fn feature_store() -> Result<Arc<FeatureStore>> {
-    if let Some(existing) = FEATURE_STORE.get() {
-        return Ok(existing.clone());
-    }
-    let registry = registry_service();
-    let online = online_store().await?;
-    let store = Arc::new(FeatureStore::new(registry, online));
-    let _ = FEATURE_STORE.set(store.clone());
-    Ok(store)
+    FEATURE_STORE
+        .get_or_try_init(|| async {
+            let registry = registry_service();
+            let online = online_store().await?;
+            Ok(Arc::new(FeatureStore::new(registry, online)))
+        })
+        .await
+        .map(Clone::clone)
 }
 
 pub fn sample_request() -> GetOnlineFeatureRequest {
