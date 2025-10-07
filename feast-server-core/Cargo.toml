@@ -27,6 +27,21 @@ sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
 redis = { version = "0.32.6", features = ["default", "tokio-comp", "safe_iterators"] }
 futures = "0.3.31"
 
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+
+[[bench]]
+name = "feature_store"
+harness = false
+
+[[bench]]
+name = "registry"
+harness = false
+
+[[bench]]
+name = "onlinestore"
+harness = false
+
 
 [build-dependencies]
 glob = { version = "0.3.3" }
