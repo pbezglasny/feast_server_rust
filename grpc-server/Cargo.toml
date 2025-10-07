@@ -1,0 +1,22 @@
+[package]
+name = "grpc-server"
+description.workspace = true
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[dependencies]
+feast-server-core = { path = "../feast-server-core" }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tonic = { version = "0.12", features = ["transport", "tls"] }
+prost = "0.13"
+prost-types = "0.13"
+chrono = { version = "0.4.42" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[build-dependencies]
+tonic-build = { version = "0.12" }

@@ -13,7 +13,8 @@ lto = true
 members = [
     "cli",
     "feast-server-core",
-    "rest-server"
+    "rest-server",
+    "grpc-server"
 ]
 resolver = "2"
 
