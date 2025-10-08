@@ -54,8 +54,8 @@ impl GetOnlineFeatureResponse {
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
             let value = ValueWrapper::from_bytes(&row.value)?;
-            let ttl = feature_view_to_ttl.get(&row.feature_view_name);
-            let status = if let Some(feature_view) = ttl {
+            let feature_view_opt = feature_views.get(&row.feature_view_name);
+            let status = if let Some(feature_view) = feature_view_opt {
                 let expiration_time = row.event_ts + feature_view.ttl;
                 if SystemTime::now() > expiration_time {
                     FeatureStatus::OutsideMaxAge

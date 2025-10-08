@@ -142,7 +142,13 @@ fn feature_views_to_keys<'a>(
                 entity_key.join_keys.push(mapped_key.to_string());
                 let col_type = entity_key_type
                     .get(&(feature_view_name.to_string(), mapped_key.to_string()))
-                    .unwrap();
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Could not find type for entity column '{}' in feature view '{}'",
+                            mapped_key,
+                            feature_view_name
+                        )
+                    })?;
                 let val = value.to_proto_value(*col_type)?;
                 entity_key.entity_values.push(val);
             }
@@ -151,7 +157,6 @@ fn feature_views_to_keys<'a>(
 
     let mut result = HashMap::new();
     for (requested_feature, feature_view) in feature_to_view {
-        let data = views_keys.get(feature_view.name.as_str());
         result.insert(
             requested_feature,
             views_keys
