@@ -7,11 +7,11 @@ use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{Value, value_type};
+use crate::feast::types::{value_type, Value};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
 use chrono::{DateTime, Utc};
 use prost::Message;
 use serde::ser::Error as SerdeError;
@@ -57,7 +57,6 @@ impl EntityId {
 pub struct GetOnlineFeatureRequest {
     pub entities: HashMap<String, Vec<EntityId>>,
     pub feature_service: Option<String>,
-    #[serde(default)]
     pub features: Option<Vec<String>>,
     pub full_feature_names: Option<bool>,
 }

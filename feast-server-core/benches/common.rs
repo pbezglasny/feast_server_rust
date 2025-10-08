@@ -78,7 +78,8 @@ pub fn sample_request() -> GetOnlineFeatureRequest {
         features: vec![
             "driver_hourly_stats_fresh:conv_rate".to_string(),
             "driver_hourly_stats:acc_rate".to_string(),
-        ],
+        ]
+        .into(),
         full_feature_names: Some(false),
     }
 }

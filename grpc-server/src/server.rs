@@ -1,20 +1,20 @@
 use crate::proto::feast::serving::serving_service_server::{ServingService, ServingServiceServer};
 use crate::proto::feast::serving::{
-    FeatureList, GetFeastServingInfoRequest, GetFeastServingInfoResponse, GetOnlineFeaturesRequest,
-    GetOnlineFeaturesResponse, GetOnlineFeaturesResponseMetadata, get_online_features_request,
-    get_online_features_response,
+    get_online_features_request, get_online_features_response, FeatureList, GetFeastServingInfoRequest,
+    GetFeastServingInfoResponse, GetOnlineFeaturesRequest, GetOnlineFeaturesResponse,
+    GetOnlineFeaturesResponseMetadata,
 };
 use crate::proto::feast::types::{
     self as grpc_types, BoolList as GrpcBoolList, BytesList as GrpcBytesList,
     DoubleList as GrpcDoubleList, FloatList as GrpcFloatList, Int32List as GrpcInt32List,
     Int64List as GrpcInt64List, RepeatedValue as GrpcRepeatedValue, StringList as GrpcStringList,
 };
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use feast_server_core::feast::types::{
-    BoolList as CoreBoolList, BytesList as CoreBytesList, DoubleList as CoreDoubleList,
-    FloatList as CoreFloatList, Int32List as CoreInt32List, Int64List as CoreInt64List,
-    StringList as CoreStringList, Value as CoreValue, value::Val as CoreVal,
+    value::Val as CoreVal, BoolList as CoreBoolList, BytesList as CoreBytesList,
+    DoubleList as CoreDoubleList, FloatList as CoreFloatList, Int32List as CoreInt32List,
+    Int64List as CoreInt64List, StringList as CoreStringList, Value as CoreValue,
 };
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{
@@ -53,9 +53,9 @@ impl FeastGrpcService {
         }
 
         let (feature_service, features) = match request.kind {
-            Some(get_online_features_request::Kind::FeatureService(name)) => (Some(name), vec![]),
-            Some(get_online_features_request::Kind::Features(list)) => (None, list.val),
-            None => (None, vec![]),
+            Some(get_online_features_request::Kind::FeatureService(name)) => (Some(name), None),
+            Some(get_online_features_request::Kind::Features(list)) => (None, Some(list.val)),
+            None => (None, None),
         };
 
         if !request.request_context.is_empty() {
