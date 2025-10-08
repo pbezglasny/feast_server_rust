@@ -26,8 +26,11 @@ use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::fs;
+use tonic::Status as TonicStatus;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response};
+
+type GrpcStatus = Box<TonicStatus>;
 
 #[derive(Clone)]
 pub struct FeastGrpcService {
@@ -43,7 +46,7 @@ impl FeastGrpcService {
 
     fn from_request_proto(
         request: GetOnlineFeaturesRequest,
-    ) -> Result<GetOnlineFeatureRequest, Status> {
+    ) -> Result<GetOnlineFeatureRequest, GrpcStatus> {
         let mut entities: HashMap<String, Vec<EntityId>> = HashMap::new();
         for (entity_name, values) in request.entities {
             entities.insert(
@@ -72,7 +75,7 @@ impl FeastGrpcService {
 
     fn to_response_proto(
         response: GetOnlineFeatureResponse,
-    ) -> Result<GetOnlineFeaturesResponse, Status> {
+    ) -> Result<GetOnlineFeaturesResponse, GrpcStatus> {
         let metadata = Some(GetOnlineFeaturesResponseMetadata {
             feature_names: Some(FeatureList {
                 val: response.metadata.feature_names,
@@ -97,7 +100,7 @@ impl ServingService for FeastGrpcService {
     async fn get_feast_serving_info(
         &self,
         _request: Request<GetFeastServingInfoRequest>,
-    ) -> Result<Response<GetFeastServingInfoResponse>, Status> {
+    ) -> Result<Response<GetFeastServingInfoResponse>, TonicStatus> {
         let response = GetFeastServingInfoResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
         };
@@ -107,18 +110,19 @@ impl ServingService for FeastGrpcService {
     async fn get_online_features(
         &self,
         request: Request<GetOnlineFeaturesRequest>,
-    ) -> Result<Response<GetOnlineFeaturesResponse>, Status> {
+    ) -> Result<Response<GetOnlineFeaturesResponse>, TonicStatus> {
         let inner = request.into_inner();
-        let translated_request = Self::from_request_proto(inner)?;
+        let translated_request = Self::from_request_proto(inner).map_err(|status| *status)?;
         let response = self
             .feature_store
             .get_online_features(translated_request)
             .await
             .map_err(|err| {
                 tracing::error!(error = ?err, "Failed to retrieve online features");
-                Status::internal("failed to retrieve online features")
+                TonicStatus::internal("failed to retrieve online features")
             })?;
-        Ok(Response::new(Self::to_response_proto(response)?))
+        let response = Self::to_response_proto(response).map_err(|status| *status)?;
+        Ok(Response::new(response))
     }
 }
 
@@ -182,7 +186,7 @@ pub async fn start_server(server_config: ServerConfig, feature_store: FeatureSto
 fn repeated_value_to_entity_ids(
     entity_name: &str,
     repeated_value: GrpcRepeatedValue,
-) -> Result<Vec<EntityId>, Status> {
+) -> Result<Vec<EntityId>, GrpcStatus> {
     repeated_value
         .val
         .into_iter()
@@ -190,16 +194,16 @@ fn repeated_value_to_entity_ids(
         .map(|(index, value)| {
             let core_value = grpc_value_to_core(value)?;
             let val = core_value.val.ok_or_else(|| {
-                Status::invalid_argument(format!(
+                Box::new(TonicStatus::invalid_argument(format!(
                     "Missing value for entity {} at index {}",
                     entity_name, index
-                ))
+                )))
             })?;
             EntityId::try_from(val).map_err(|err| {
-                Status::invalid_argument(format!(
+                Box::new(TonicStatus::invalid_argument(format!(
                     "Invalid value for entity {} at index {}: {}",
                     entity_name, index, err
-                ))
+                )))
             })
         })
         .collect()
@@ -207,7 +211,7 @@ fn repeated_value_to_entity_ids(
 
 fn feature_result_to_proto(
     result: FeatureResults,
-) -> Result<get_online_features_response::FeatureVector, Status> {
+) -> Result<get_online_features_response::FeatureVector, GrpcStatus> {
     let mut values = Vec::with_capacity(result.values.len());
     for ValueWrapper(value) in result.values {
         values.push(core_value_to_grpc(value)?);
@@ -247,7 +251,7 @@ fn datetime_to_timestamp(dt: DateTime<Utc>) -> Timestamp {
     }
 }
 
-fn grpc_value_to_core(value: grpc_types::Value) -> Result<CoreValue, Status> {
+fn grpc_value_to_core(value: grpc_types::Value) -> Result<CoreValue, GrpcStatus> {
     let core_val = match value.val {
         Some(grpc_types::value::Val::BytesVal(v)) => Some(CoreVal::BytesVal(v)),
         Some(grpc_types::value::Val::StringVal(v)) => Some(CoreVal::StringVal(v)),
@@ -289,7 +293,7 @@ fn grpc_value_to_core(value: grpc_types::Value) -> Result<CoreValue, Status> {
     Ok(CoreValue { val: core_val })
 }
 
-fn core_value_to_grpc(value: CoreValue) -> Result<grpc_types::Value, Status> {
+fn core_value_to_grpc(value: CoreValue) -> Result<grpc_types::Value, GrpcStatus> {
     let grpc_val = match value.val {
         Some(CoreVal::BytesVal(v)) => Some(grpc_types::value::Val::BytesVal(v)),
         Some(CoreVal::StringVal(v)) => Some(grpc_types::value::Val::StringVal(v)),
