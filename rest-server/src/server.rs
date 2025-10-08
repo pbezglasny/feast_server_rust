@@ -138,11 +138,10 @@ async fn handle_feature_request(
 ) -> Result<impl IntoResponse, AppError> {
     let Json(get_online_feature_request) = payload?;
 
-    let response = server
-        .feature_store
-        .get_online_features(get_online_feature_request)
-        .await
-        .map_err(|err| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
-    Ok(Json(response))
+    server
+    .feature_store
+    .get_online_features(get_online_feature_request)
+    .await
+    .map(Json)
+    .map_err(|err| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
 }
