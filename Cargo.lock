@@ -3053,6 +3053,7 @@ dependencies = [
  "axum-prometheus",
  "axum-server",
  "feast-server-core",
+ "serde",
  "tower-http",
  "tracing",
 ]
