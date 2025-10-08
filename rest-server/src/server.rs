@@ -1,11 +1,16 @@
-use anyhow::Result;
-use anyhow::anyhow;
-use axum::routing::get;
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
+use anyhow::{Result, anyhow};
+use axum::{
+    Json, Router,
+    extract::{State, rejection::JsonRejection},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
 use axum_prometheus::PrometheusMetricLayer;
 use axum_server::tls_rustls::RustlsConfig;
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::GetOnlineFeatureRequest;
+use serde::Serialize;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
@@ -32,6 +37,41 @@ impl Default for ServerConfig {
             tls_cert_path: None,
             tls_key_path: None,
         }
+    }
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    message: String,
+}
+
+pub struct AppError {
+    status: StatusCode,
+    message: String,
+}
+
+impl AppError {
+    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+        }
+    }
+}
+
+impl From<JsonRejection> for AppError {
+    fn from(rejection: JsonRejection) -> Self {
+        Self::new(rejection.status(), rejection.body_text())
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let status = self.status;
+        let body = Json(ErrorResponse {
+            message: self.message,
+        });
+        (status, body).into_response()
     }
 }
 
@@ -94,12 +134,15 @@ pub async fn start_server(
 
 async fn handle_feature_request(
     State(server): State<FeastServer>,
-    Json(get_online_feature_request): Json<GetOnlineFeatureRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    server
+    payload: Result<Json<GetOnlineFeatureRequest>, JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    let Json(get_online_feature_request) = payload?;
+
+    let response = server
         .feature_store
         .get_online_features(get_online_feature_request)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-        .map(Json)
+        .map_err(|err| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    Ok(Json(response))
 }
