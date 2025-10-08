@@ -127,7 +127,7 @@ fn feature_views_to_keys<'a>(
     for (entity_id, entity_keys_values) in requested_entity_keys {
         let mapped_key = reverse_join_key_mapping
             .get(entity_id.as_str())
-            .map(|s| *s)
+            .copied()
             .unwrap_or(entity_id.as_str());
         for feature_view_name in entity_to_view.get(mapped_key).unwrap_or(&Vec::new()) {
             let mut value_entry = views_keys
@@ -160,7 +160,7 @@ fn feature_views_to_keys<'a>(
         result.insert(
             requested_feature,
             views_keys
-                .get(feature_view.name.as_str()).map(|v|v.clone())
+                .get(feature_view.name.as_str()).cloned()
                 .ok_or(anyhow!(
                     "Cannot build entity keys for feature {}_{}. Not all entity columns are provided. Entity columns: {:?} and key_join_mapping [{}]",
                     requested_feature.feature_view_name,

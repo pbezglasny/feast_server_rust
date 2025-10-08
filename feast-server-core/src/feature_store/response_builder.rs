@@ -16,6 +16,9 @@ struct ResponseBuilder {
     feature_names: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
+
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
@@ -24,11 +27,14 @@ impl GetOnlineFeatureResponse {
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<String, FeatureView>,
     ) -> Result<Self> {
+        // feature name to mapping where key is entity id value from request and values are
+        // associated values for that feature
         let mut feature_values: HashMap<
             String,
-            HashMap<EntityId, HashMap<String, (Val, FeatureStatus, SystemTime)>>,
+            HashMap<EntityId, HashMap<String, ResponseFeatureRow>>,
         > = HashMap::new();
 
+        // entity key name to set of features from views where this entity is used
         let mut entity_to_features: HashMap<String, HashSet<String>> = HashMap::new();
 
         for row in rows.into_iter() {
@@ -39,7 +45,9 @@ impl GetOnlineFeatureResponse {
             if join_keys.len() != 1 {
                 return Err(anyhow!("Len of key is greater than 1"));
             }
-            let key_name = join_keys.pop().unwrap();
+            let key_name = join_keys
+                .pop()
+                .ok_or(anyhow!("Incorrect format of join key"))?;
             let key_value = EntityId::try_from(
                 entity_values
                     .pop()
@@ -55,20 +63,46 @@ impl GetOnlineFeatureResponse {
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
             let value = ValueWrapper::from_bytes(&row.value)?;
             let feature_view_opt = feature_views.get(&row.feature_view_name);
-            let status = if let Some(feature_view) = feature_view_opt {
-                let expiration_time = row.event_ts + feature_view.ttl;
-                if SystemTime::now() > expiration_time {
-                    FeatureStatus::OutsideMaxAge
+            let status: FeatureStatus = {
+                if value.0.val.is_none() {
+                    FeatureStatus::NullValue
+                } else if let Some(feature_view) = feature_view_opt {
+                    let expiration_time = row.event_ts + feature_view.ttl;
+                    if SystemTime::now() > expiration_time {
+                        FeatureStatus::OutsideMaxAge
+                    } else {
+                        FeatureStatus::Present
+                    }
                 } else {
                     FeatureStatus::Present
                 }
-            } else {
-                FeatureStatus::Present
             };
             entry_values.insert(
                 row.feature_name,
-                (value.0.val.unwrap(), status, row.event_ts),
+                ResponseFeatureRow(value.0, status, row.event_ts),
             );
+        }
+
+        let join_key_alias_map = feature_views
+            .values()
+            .filter_map(|fv| fv.join_key_map.clone())
+            .fold(HashMap::new(), |mut acc, fv| {
+                acc.extend(fv);
+                acc
+            });
+
+
+        // TODO do not copy if request contains original name and alias name
+        for (original_name, alias_name) in join_key_alias_map.into_iter() {
+            if entity_to_features.contains_key(&original_name) {
+                entity_to_features.insert(
+                    alias_name.clone(),
+                    entity_to_features[&original_name].clone(),
+                );
+            }
+            if feature_values.contains_key(&original_name) {
+                feature_values.insert(alias_name, feature_values[&original_name].clone());
+            }
         }
 
         let mut result = GetOnlineFeatureResponse::default();
@@ -103,10 +137,8 @@ impl GetOnlineFeatureResponse {
                                 .event_timestamps
                                 .push(DateTime::from(SystemTime::UNIX_EPOCH).round_subsecs(0));
                         }
-                        Some((val, status, event_ts)) => {
-                            feature_result
-                                .values
-                                .push(ValueWrapper(Value { val: Some(val) }));
+                        Some(ResponseFeatureRow(value, status, event_ts)) => {
+                            feature_result.values.push(ValueWrapper(value));
                             feature_result.statuses.push(FeatureStatus::Present);
                             feature_result
                                 .event_timestamps
