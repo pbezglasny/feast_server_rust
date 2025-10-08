@@ -184,7 +184,7 @@ mod tests {
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
-        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()];
+        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = feature_registry_service
             .request_to_view_keys(&request_obj)
             .await?;

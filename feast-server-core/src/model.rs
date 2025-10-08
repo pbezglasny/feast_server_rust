@@ -58,7 +58,7 @@ pub struct GetOnlineFeatureRequest {
     pub entities: HashMap<String, Vec<EntityId>>,
     pub feature_service: Option<String>,
     #[serde(default)]
-    pub features: Vec<String>,
+    pub features: Option<Vec<String>>,
     pub full_feature_names: Option<bool>,
 }
 
@@ -283,7 +283,12 @@ impl From<&GetOnlineFeatureRequest> for RequestedFeatures {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
             RequestedFeatures::FeatureService(feature_service.clone())
         } else {
-            RequestedFeatures::FeatureNames(get_online_feature_request.features.clone())
+            RequestedFeatures::FeatureNames(
+                get_online_feature_request
+                    .features
+                    .clone()
+                    .unwrap_or(Vec::new()),
+            )
         }
     }
 }

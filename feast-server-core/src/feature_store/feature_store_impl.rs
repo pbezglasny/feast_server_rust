@@ -103,37 +103,37 @@ fn feature_views_to_keys<'a>(
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
 ) -> Result<HashMap<&'a RequestedFeature, Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
-    let mut entity_key_type: HashMap<(&str, &str), value_type::Enum> = HashMap::new();
-    let mut entity_to_view: HashMap<&str, Vec<&str>> = HashMap::new();
-    let mut reverse_join_key_mapping: HashMap<&str, &str> = HashMap::new();
+    let mut entity_key_type: HashMap<(String, String), value_type::Enum> = HashMap::new();
+    let mut entity_to_view: HashMap<String, Vec<&str>> = HashMap::new();
+    let mut reverse_join_key_mapping: HashMap<String, &str> = HashMap::new();
     for feature_view in feature_to_view.values() {
         if let Some(mapping) = &feature_view.join_key_map {
             for (from, to) in mapping {
-                reverse_join_key_mapping.insert(to.as_str(), from.as_str());
+                reverse_join_key_mapping.insert(to.clone(), from.as_str());
             }
         }
         for entity_col in &feature_view.entity_columns {
-            let entry = entity_to_view.entry(entity_col.name.as_str()).or_default();
+            let entry = entity_to_view.entry(entity_col.name.clone()).or_default();
             entry.push(feature_view.name.as_str());
             entity_key_type.insert(
-                (feature_view.name.as_str(), entity_col.name.as_str()),
+                (feature_view.name.clone(), entity_col.name.clone()),
                 entity_col.value_type,
             );
         }
     }
 
     // view_name to key
-    let mut views_keys: HashMap<&str, Vec<EntityKey>> = HashMap::new();
-    for (entity_id, entity_keys) in requested_entity_keys {
+    let mut views_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
+    for (entity_id, entity_keys_values) in requested_entity_keys {
         let mapped_key = reverse_join_key_mapping
             .get(entity_id.as_str())
             .map(|s| *s)
             .unwrap_or(entity_id.as_str());
         for feature_view_name in entity_to_view.get(mapped_key).unwrap_or(&Vec::new()) {
             let mut value_entry = views_keys
-                .entry(feature_view_name)
-                .or_insert(Vec::with_capacity(entity_keys.len()));
-            for (i, value) in entity_keys.iter().enumerate() {
+                .entry(feature_view_name.to_string())
+                .or_insert(Vec::with_capacity(entity_keys_values.len()));
+            for (i, value) in entity_keys_values.iter().enumerate() {
                 if i == value_entry.len() {
                     let entity_key = EntityKey::default();
                     value_entry.push(entity_key);
@@ -141,7 +141,7 @@ fn feature_views_to_keys<'a>(
                 let entity_key = value_entry.get_mut(i).unwrap();
                 entity_key.join_keys.push(mapped_key.to_string());
                 let col_type = entity_key_type
-                    .get(&(feature_view_name, mapped_key))
+                    .get(&(feature_view_name.to_string(), mapped_key.to_string()))
                     .unwrap();
                 let val = value.to_proto_value(*col_type)?;
                 entity_key.entity_values.push(val);
@@ -151,15 +151,17 @@ fn feature_views_to_keys<'a>(
 
     let mut result = HashMap::new();
     for (requested_feature, feature_view) in feature_to_view {
+        let data = views_keys.get(feature_view.name.as_str());
         result.insert(
             requested_feature,
             views_keys
-                .remove(feature_view.name.as_str())
+                .get(feature_view.name.as_str()).map(|v|v.clone())
                 .ok_or(anyhow!(
-                    "Cannot build entity keys for feature {}_{}. Not all entity columns are provided. Entity columns: {:?}",
+                    "Cannot build entity keys for feature {}_{}. Not all entity columns are provided. Entity columns: {:?} and key_join_mapping [{}]",
                     requested_feature.feature_view_name,
                     requested_feature.feature_name,
-                    feature_view.entity_columns
+                    feature_view.entity_columns,
+                    feature_view.join_key_map.as_ref().map(|m| format!("{:?}", m)).unwrap_or_else(|| "None".to_string())
                 ))?,
         );
     }
@@ -363,8 +365,7 @@ mod tests {
     use crate::util::EntityKeyWrapper;
     use anyhow::Result;
 
-    #[tokio::test]
-    async fn get_features() -> Result<()> {
+    async fn get_feature_store() -> Result<FeatureStore> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
         let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;
@@ -375,10 +376,15 @@ mod tests {
             ConnectionOptions::default(),
         )
         .await?;
-        let store = FeatureStore {
+        Ok(FeatureStore {
             registry: Arc::new(feature_registry),
             online_store: Arc::new(sqlite_store),
-        };
+        })
+    }
+
+    #[tokio::test]
+    async fn get_features() -> Result<()> {
+        let store = get_feature_store().await?;
 
         let entities = HashMap::from([(
             "driver_id".to_string(),
@@ -391,10 +397,10 @@ mod tests {
         let request = GetOnlineFeatureRequest {
             entities,
             feature_service: None,
-            features: vec![
+            features: Some(vec![
                 "driver_hourly_stats_fresh:conv_rate".to_string(),
                 "driver_hourly_stats:acc_rate".to_string(),
-            ],
+            ]),
             full_feature_names: Some(false),
         };
         let result = store.get_online_features(request).await?;
@@ -429,6 +435,30 @@ mod tests {
                 _ => {}
             }
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_features_alias() -> Result<()> {
+        let store = get_feature_store().await?;
+
+        let entities = HashMap::from([(
+            "truck_id".to_string(),
+            vec![
+                EntityId::Int(1005),
+                EntityId::Int(1002),
+                EntityId::Int(2003),
+            ],
+        )]);
+        let request = GetOnlineFeatureRequest {
+            entities,
+            feature_service: Some("driver_activity_alias".to_string()),
+            features: None,
+            full_feature_names: Some(false),
+        };
+
+        let result = store.get_online_features(request).await?;
+        println!("{:?}", result);
         Ok(())
     }
 }

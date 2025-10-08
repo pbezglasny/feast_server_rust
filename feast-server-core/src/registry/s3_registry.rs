@@ -96,7 +96,7 @@ mod tests {
         let buket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
         let s3_registry = super::S3Registry::new_non_cached(buket_url).await?;
         let mut request_obj = GetOnlineFeatureRequest::default();
-        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()];
+        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = s3_registry.request_to_view_keys(&request_obj).await?;
         println!("{:#?}", result);
         Ok(())
