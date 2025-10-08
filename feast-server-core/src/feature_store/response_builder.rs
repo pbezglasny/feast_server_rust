@@ -22,7 +22,7 @@ impl GetOnlineFeatureResponse {
     pub fn try_from(
         entity_keys: HashMap<String, Vec<EntityId>>,
         rows: Vec<OnlineStoreRow>,
-        feature_view_to_ttl: HashMap<String, FeatureView>,
+        feature_views: HashMap<String, FeatureView>,
     ) -> Result<Self> {
         let mut feature_values: HashMap<
             String,
