@@ -108,6 +108,7 @@ fn feature_views_to_keys<'a>(
     let mut reverse_join_key_mapping: HashMap<String, &str> = HashMap::new();
     for feature_view in feature_to_view.values() {
         if let Some(mapping) = &feature_view.join_key_map {
+            // TODO make join key mapping per view
             for (from, to) in mapping {
                 reverse_join_key_mapping.insert(to.clone(), from.as_str());
             }

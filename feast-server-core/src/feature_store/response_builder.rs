@@ -19,6 +19,7 @@ struct ResponseBuilder {
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
 
+// TODO add support of full feature name in result
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
@@ -91,8 +92,7 @@ impl GetOnlineFeatureResponse {
                 acc
             });
 
-
-        // TODO do not copy if request contains original name and alias name
+        // TODO do not copy if request contains original name and alias name and avoid duplication
         for (original_name, alias_name) in join_key_alias_map.into_iter() {
             if entity_to_features.contains_key(&original_name) {
                 entity_to_features.insert(
