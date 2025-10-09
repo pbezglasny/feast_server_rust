@@ -26,14 +26,16 @@ impl FileFeatureRegistry {
 
     pub fn from_path(registry_file_path: &str) -> Result<Self> {
         let path = Path::new(registry_file_path);
-        if !path.exists() {
-            return Err(anyhow!(
-                "Registry file not found at '{}'. Check your repository configuration (e.g. FEATURE_REPO_DIR or --chdir).",
-                path.display()
-            ));
-        }
-        let mut file = fs::File::open(path)
-            .with_context(|| format!("Failed to open registry file at '{}'", path.display()))?;
+        let mut file = fs::File::open(path).map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                anyhow!(
+                    "Registry file not found at '{}'. Check your repository configuration (e.g. FEATURE_REPO_DIR or --chdir).",
+                    path.display()
+                )
+            } else {
+                anyhow::Error::new(err).context(format!("Failed to open registry file at '{}'", path.display()))
+            }
+        })?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)
             .with_context(|| format!("Failed to read registry file at '{}'", path.display()))?;
