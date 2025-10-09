@@ -118,9 +118,7 @@ impl EntityColumnRef {
 
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns mapping from requested feature to entity keys.
-/// TODO: In the returned HashMap, replace the Vec<EntityKey> values with the correct entity keys
-/// for each feature, ensuring that the keys match the expected format for downstream processing.
-/// Specify the transformation logic if entity keys need to be mapped or filtered.
+/// TODO: In the returned HashMap, replace the Vec<EntityKey> with &Vec<EntityKey>
 fn feature_views_to_keys<'a>(
     feature_to_view: &'a HashMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
