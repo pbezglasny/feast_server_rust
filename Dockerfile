@@ -6,8 +6,6 @@ WORKDIR /app/build
 
 RUN apt update && apt install protobuf-compiler -y
 
-#COPY cli feast-server-core grpc-server rest-server Cargo.toml Cargo.lock .
-
 COPY . .
 
 RUN cargo build --release
