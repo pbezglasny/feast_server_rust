@@ -341,9 +341,9 @@ mod tests {
 
     #[test]
     fn feature_views_to_keys_mapping_test() -> Result<()> {
-        let (mut feature_view_1, mut feature_view_2) = {
+        let mut feature_view_1 = {
             let features = get_features_views();
-            (features[0].clone(), features[1].clone())
+            features[0].clone()
         };
         feature_view_1.join_key_map = Some(HashMap::from([(
             "entity_col_1".to_string(),
