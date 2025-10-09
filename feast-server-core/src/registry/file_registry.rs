@@ -1,16 +1,17 @@
 use crate::feast::core::Registry;
 use crate::model::{
-    FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest, Feature,
+    Feature, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest,
     RequestedFeatures,
 };
 use crate::registry::FeatureRegistryService;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 
 pub struct FileFeatureRegistry {
@@ -24,10 +25,21 @@ impl FileFeatureRegistry {
     }
 
     pub fn from_path(registry_file_path: &str) -> Result<Self> {
-        let mut file = fs::File::open(registry_file_path)?;
+        let path = Path::new(registry_file_path);
+        if !path.exists() {
+            return Err(anyhow!(
+                "Registry file not found at '{}'. Check your repository configuration (e.g. FEATURE_REPO_DIR or --chdir).",
+                path.display()
+            ));
+        }
+        let mut file = fs::File::open(path)
+            .with_context(|| format!("Failed to open registry file at '{}'", path.display()))?;
         let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
-        let registry_proto = Registry::decode(&*buf)?;
+        file.read_to_end(&mut buf)
+            .with_context(|| format!("Failed to read registry file at '{}'", path.display()))?;
+        let registry_proto = Registry::decode(&*buf).with_context(|| {
+            format!("Failed to parse registry protobuf at '{}'", path.display())
+        })?;
         let registry = FeatureRegistry::try_from(registry_proto)?;
         Ok(Self { registry })
     }
@@ -82,10 +94,7 @@ impl FileFeatureRegistry {
         Ok(result)
     }
 
-    fn feature_views_from_names(
-        &self,
-        names: &[Feature],
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    fn feature_views_from_names(&self, names: &[Feature]) -> Result<HashMap<Feature, FeatureView>> {
         names
             .iter()
             .map(|req_feature| {
@@ -155,7 +164,7 @@ impl FeatureRegistryService for FileFeatureRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{GetOnlineFeatureRequest, Feature};
+    use crate::model::{Feature, GetOnlineFeatureRequest};
     use crate::registry::FeatureRegistryService;
     use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
