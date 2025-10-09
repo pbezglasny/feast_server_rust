@@ -34,11 +34,11 @@ impl FeatureStore {
         let feature_to_view: HashMap<Feature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
 
-        let keys_by_view: HashMap<&Feature, Vec<EntityKey>> =
+        let keys_by_view: HashMap<&Feature, Arc<Vec<EntityKey>>> =
             feature_views_to_keys(&feature_to_view, &request.entities)?;
 
         // feature view name to requested entity keys values
-        let mut view_to_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
+        let mut view_to_keys: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
         // feature view name to features
         let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -46,7 +46,10 @@ impl FeatureStore {
         let mut view_name_to_view: HashMap<String, FeatureView> = HashMap::new();
 
         for (view_name, result_keys) in keys_by_view.into_iter() {
-            view_to_keys.insert(view_name.feature_view_name.clone(), result_keys);
+            view_to_keys.insert(
+                view_name.feature_view_name.clone(),
+                Arc::clone(&result_keys),
+            );
             view_features
                 .entry(view_name.feature_view_name.clone())
                 .or_default();
@@ -66,9 +69,14 @@ impl FeatureStore {
             let online = Arc::clone(&self.online_store);
 
             join_set.spawn(async move {
+                let entity_keys_arc = entity_keys;
                 let feature_refs: Vec<&str> = features.iter().map(|s| s.as_str()).collect();
                 online
-                    .get_feature_values(view_name.as_str(), &entity_keys, &feature_refs)
+                    .get_feature_values(
+                        view_name.as_str(),
+                        entity_keys_arc.as_ref().as_slice(),
+                        &feature_refs,
+                    )
                     .await
             });
         }
@@ -117,12 +125,11 @@ impl EntityColumnRef {
 }
 
 /// Extract entity keys for each feature view from requested entity keys.
-/// Returns mapping from requested feature to entity keys.
-/// TODO: In the returned HashMap, replace the Vec<EntityKey> with &Vec<EntityKey>
+/// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys<'a>(
     feature_to_view: &'a HashMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
-) -> Result<HashMap<&'a Feature, Vec<EntityKey>>> {
+) -> Result<HashMap<&'a Feature, Arc<Vec<EntityKey>>>> {
     let mut entity_key_type: HashMap<EntityColumnRef, value_type::Enum> = HashMap::new();
     // mapping provided entity to list of features views
     let mut entity_to_view: HashMap<String, Vec<&str>> = HashMap::new();
@@ -161,8 +168,7 @@ fn feature_views_to_keys<'a>(
                     .or_insert(Vec::with_capacity(entity_keys_values.len()));
                 for (i, value) in entity_keys_values.iter().enumerate() {
                     if i == value_entry.len() {
-                        let entity_key = EntityKey::default();
-                        value_entry.push(entity_key);
+                        value_entry.push(EntityKey::default());
                     }
                     let entity_key = value_entry.get_mut(i).unwrap();
                     entity_key.join_keys.push(mapped_key.to_string());
@@ -185,20 +191,28 @@ fn feature_views_to_keys<'a>(
         }
     }
 
+    let view_keys_arc: HashMap<String, Arc<Vec<EntityKey>>> = views_keys
+        .into_iter()
+        .map(|(view, keys)| (view, Arc::new(keys)))
+        .collect();
+
     let mut result = HashMap::new();
     for (requested_feature, feature_view) in feature_to_view {
-        result.insert(
-            requested_feature,
-            views_keys
-                .get(feature_view.name.as_str()).cloned()
-                .ok_or(anyhow!(
+        let keys = view_keys_arc
+            .get(feature_view.name.as_str())
+            .ok_or_else(|| {
+                anyhow!(
                     "Cannot build entity keys for feature {}_{}. Not all entity columns are provided. Entity columns: {:?} and key_join_mapping [{}]",
                     requested_feature.feature_view_name,
                     requested_feature.feature_name,
                     feature_view.entity_columns,
-                    feature_view.join_key_map.as_ref().map(|m| format!("{:?}", m)).unwrap_or_else(|| "None".to_string())
-                ))?,
-        );
+                    feature_view.join_key_map
+                        .as_ref()
+                        .map(|m| format!("{:?}", m))
+                        .unwrap_or_else(|| "None".to_string())
+                )
+            })?;
+        result.insert(requested_feature, Arc::clone(keys));
     }
     Ok(result)
 }
@@ -279,8 +293,8 @@ mod tests {
     }
 
     fn assert_equal_results(
-        result: HashMap<&Feature, Vec<EntityKey>>,
-        mut expected: HashMap<&Feature, Vec<EntityKey>>,
+        result: HashMap<&Feature, Arc<Vec<EntityKey>>>,
+        mut expected: HashMap<&Feature, Arc<Vec<EntityKey>>>,
     ) {
         let mut result_keys = result.keys().collect::<Vec<&&Feature>>();
         let mut expected_keys = expected.keys().collect::<Vec<&&Feature>>();
@@ -288,15 +302,17 @@ mod tests {
         expected_keys.sort();
         assert_eq!(result_keys, expected_keys);
         for (key, result_values) in result.into_iter() {
-            let result_vec: Vec<EntityKeyWrapper> = result_values
-                .into_iter()
-                .map(|e| EntityKeyWrapper(e))
+            let result_arc = result_values;
+            let result_vec: Vec<EntityKeyWrapper> = result_arc
+                .iter()
+                .cloned()
+                .map(EntityKeyWrapper)
                 .collect();
-            let expected_vec: Vec<EntityKeyWrapper> = expected
-                .remove(key)
-                .unwrap()
-                .into_iter()
-                .map(|e| EntityKeyWrapper(e))
+            let expected_arc = expected.remove(key).unwrap();
+            let expected_vec: Vec<EntityKeyWrapper> = expected_arc
+                .iter()
+                .cloned()
+                .map(EntityKeyWrapper)
                 .collect();
             assert_eq!(result_vec, expected_vec);
         }
@@ -344,8 +360,10 @@ mod tests {
             &[(12, 22), (14, 24), (16, 26)],
         );
 
-        let mut expected =
-            HashMap::from([(&feature_1, entity_values_1), (&feature_2, entity_values_2)]);
+        let mut expected = HashMap::from([
+            (&feature_1, Arc::new(entity_values_1)),
+            (&feature_2, Arc::new(entity_values_2)),
+        ]);
         assert_equal_results(result, expected);
         Ok(())
     }
@@ -378,7 +396,7 @@ mod tests {
 
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
 
-        let mut expected = HashMap::from([(&feature_1, entity_values_1)]);
+        let mut expected = HashMap::from([(&feature_1, Arc::new(entity_values_1))]);
         assert_equal_results(result, expected);
         Ok(())
     }
