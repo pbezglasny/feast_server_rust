@@ -11,9 +11,30 @@ use chrono::{DateTime, SubsecRound};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
 
-struct ResponseBuilder {
-    entity_keys: HashMap<String, Vec<EntityId>>,
-    feature_names: Vec<String>,
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct Feature {
+    feature_view: String,
+    feature_name: String,
+}
+
+impl Feature {
+    fn new(feature_view: String, feature_name: String) -> Self {
+        Self {
+            feature_view,
+            feature_name,
+        }
+    }
+
+    fn entity_feature(feature_name: String) -> Self {
+        Self {
+            feature_view: "".to_string(),
+            feature_name,
+        }
+    }
+
+    fn full_name(&self) -> String {
+        format!("{}__{}", self.feature_view, self.feature_name)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,16 +48,17 @@ impl GetOnlineFeatureResponse {
         entity_keys: HashMap<String, Vec<EntityId>>,
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<String, FeatureView>,
+        full_feature_names: bool,
     ) -> Result<Self> {
         // feature name to mapping where key is entity id value from request and values are
         // associated values for that feature
         let mut feature_values: HashMap<
             String,
-            HashMap<EntityId, HashMap<String, ResponseFeatureRow>>,
+            HashMap<EntityId, HashMap<Feature, ResponseFeatureRow>>,
         > = HashMap::new();
 
         // entity key name to set of features from views where this entity is used
-        let mut entity_to_features: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut entity_to_features: HashMap<String, HashSet<Feature>> = HashMap::new();
 
         for row in rows.into_iter() {
             let EntityKey {
@@ -59,7 +81,10 @@ impl GetOnlineFeatureResponse {
             entity_to_features
                 .entry(key_name.clone())
                 .or_default()
-                .insert(row.feature_name.clone());
+                .insert(Feature::new(
+                    row.feature_view_name.clone(),
+                    row.feature_name.clone(),
+                ));
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
             let value = ValueWrapper::from_bytes(&row.value)?;
@@ -79,7 +104,7 @@ impl GetOnlineFeatureResponse {
                 }
             };
             entry_values.insert(
-                row.feature_name,
+                Feature::new(row.feature_view_name.clone(), row.feature_name.clone()),
                 ResponseFeatureRow(value.0, status, row.event_ts),
             );
         }
@@ -113,20 +138,21 @@ impl GetOnlineFeatureResponse {
             let associated_features = entity_to_features
                 .remove(&entity_key_name)
                 .unwrap_or_default();
-            let mut features: HashMap<&str, FeatureResults> = HashMap::new();
+            let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
             for entity_val in values.into_iter() {
                 let mut values = associated_values_map
                     .remove(&entity_val)
                     .unwrap_or_default();
                 {
-                    let mut entity_result = features.entry(&entity_key_name).or_default();
+                    let entity_feature = Feature::entity_feature(entity_key_name.clone());
+                    let mut entity_result = features.entry(entity_feature).or_default();
                     entity_result.values.push(ValueWrapper::from(entity_val));
                     entity_result.statuses.push(FeatureStatus::Present);
                     entity_result.event_timestamps.push(DateTime::UNIX_EPOCH);
                 }
                 for associate_feature in &associated_features {
                     let value_opt = values.remove(associate_feature);
-                    let feature_result = features.entry(associate_feature).or_default();
+                    let feature_result = features.entry(associate_feature.clone()).or_default();
                     match value_opt {
                         None => {
                             feature_result
@@ -151,17 +177,21 @@ impl GetOnlineFeatureResponse {
             result.metadata.feature_names.push(entity_key_name.clone());
             result.results.push(
                 features
-                    .remove(entity_key_name.as_str())
+                    .remove(&Feature::entity_feature(entity_key_name.clone()))
                     .ok_or(anyhow!("Missing values for feature {}", entity_key_name))?,
             );
 
-            for feature in &associated_features {
-                result.results.push(
-                    features
-                        .remove(feature.as_str())
-                        .ok_or(anyhow!("Missing values for feature {}", feature))?,
-                );
-                result.metadata.feature_names.push(feature.clone());
+            for feature in associated_features {
+                result.results.push(features.remove(&feature).ok_or(anyhow!(
+                    "Missing values for feature {}",
+                    feature.full_name()
+                ))?);
+                let feature_name = if full_feature_names {
+                    feature.full_name()
+                } else {
+                    feature.feature_name.clone()
+                };
+                result.metadata.feature_names.push(feature_name);
             }
         }
         Ok(result)

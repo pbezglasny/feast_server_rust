@@ -92,7 +92,12 @@ impl FeatureStore {
                 errors
             ));
         }
-        GetOnlineFeatureResponse::try_from(request.entities, clean_data, view_name_to_view)
+        GetOnlineFeatureResponse::try_from(
+            request.entities,
+            clean_data,
+            view_name_to_view,
+            request.full_feature_names.unwrap_or(false),
+        )
     }
 }
 
@@ -104,6 +109,7 @@ fn feature_views_to_keys<'a>(
 ) -> Result<HashMap<&'a RequestedFeature, Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
     let mut entity_key_type: HashMap<(String, String), value_type::Enum> = HashMap::new();
+    // mapping provided entity to list of features views
     let mut entity_to_view: HashMap<String, Vec<&str>> = HashMap::new();
     let mut reverse_join_key_mapping: HashMap<String, &str> = HashMap::new();
     for feature_view in feature_to_view.values() {
@@ -438,14 +444,16 @@ mod tests {
     async fn get_features_alias() -> Result<()> {
         let store = get_feature_store().await?;
 
-        let entities = HashMap::from([(
-            "truck_id".to_string(),
-            vec![
-                EntityId::Int(1005),
-                EntityId::Int(1002),
-                EntityId::Int(2003),
-            ],
-        )]);
+        let entities = HashMap::from([
+            (
+                "truck_id".to_string(),
+                vec![EntityId::Int(1002), EntityId::Int(2003)],
+            ),
+            (
+                "driver_id".to_string(),
+                vec![EntityId::Int(1002), EntityId::Int(1005)],
+            ),
+        ]);
         let request = GetOnlineFeatureRequest {
             entities,
             feature_service: Some("driver_activity_alias".to_string()),
@@ -454,7 +462,19 @@ mod tests {
         };
 
         let result = store.get_online_features(request).await?;
-        println!("{:?}", result);
+        assert_eq!(result.metadata.feature_names.len(), 5);
+        let mut feature_names = result.metadata.feature_names.clone();
+        feature_names.sort();
+        assert_eq!(
+            feature_names,
+            vec![
+                "acc_rate".to_string(),
+                "avg_daily_trips".to_string(),
+                "conv_rate".to_string(),
+                "driver_id".to_string(),
+                "truck_id".to_string()
+            ]
+        );
         Ok(())
     }
 }
