@@ -8,7 +8,7 @@ use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{EntityId, GetOnlineFeatureRequest};
 use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use feast_server_core::onlinestore::OnlineStore;
-use feast_server_core::registry::file_registry::FeatureRegistryProto;
+use feast_server_core::registry::file_registry::FileFeatureRegistry;
 use feast_server_core::registry::FeatureRegistryService;
 use tokio::sync::OnceCell;
 
@@ -16,9 +16,9 @@ fn manifest_path(relative: &str) -> String {
     format!("{}/{}", env!("CARGO_MANIFEST_DIR"), relative)
 }
 
-fn load_registry_proto() -> Result<FeatureRegistryProto> {
+fn load_registry_proto() -> Result<FileFeatureRegistry> {
     let registry_path = manifest_path("test_data/registry.pb");
-    FeatureRegistryProto::from_path(&registry_path)
+    FileFeatureRegistry::from_path(&registry_path)
 }
 
 static REGISTRY_SERVICE: OnceLock<Arc<dyn FeatureRegistryService>> = OnceLock::new();
@@ -78,7 +78,8 @@ pub fn sample_request() -> GetOnlineFeatureRequest {
         features: vec![
             "driver_hourly_stats_fresh:conv_rate".to_string(),
             "driver_hourly_stats:acc_rate".to_string(),
-        ],
+        ]
+        .into(),
         full_feature_names: Some(false),
     }
 }

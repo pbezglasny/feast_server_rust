@@ -12,7 +12,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 mod cli_options;
 
-const FEATURE_REPO_DIR_ENV_VAR: &str = "FEATURE_REPO_DIR_ENV_VAR";
+const FEATURE_REPO_DIR_ENV_VAR_NAME: &str = "FEATURE_REPO_DIR_ENV_VAR";
 const FEAST_FS_YAML_FILE_PATH_ENV_VAR: &str = "FEAST_FS_YAML_FILE_PATH";
 const DEFAULT_FEATURE_STORE_FILE_NAME: &str = "feature_store.yaml";
 
@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cwd = if let Some(path) = chdir.or_else(|| std::env::var(FEATURE_REPO_DIR_ENV_VAR).ok()) {
+    let cwd = if let Some(path) = chdir.or_else(|| std::env::var(FEATURE_REPO_DIR_ENV_VAR_NAME).ok()) {
         PathBuf::from(path)
     } else {
         std::env::current_dir()?

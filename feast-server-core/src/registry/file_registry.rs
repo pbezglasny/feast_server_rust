@@ -1,6 +1,6 @@
 use crate::feast::core::Registry;
 use crate::model::{
-    FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest, RequestedFeature,
+    FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest, Feature,
     RequestedFeatures,
 };
 use crate::registry::FeatureRegistryService;
@@ -13,11 +13,11 @@ use std::fs;
 use std::io::Read;
 use std::sync::Arc;
 
-pub struct FeatureRegistryProto {
+pub struct FileFeatureRegistry {
     registry: FeatureRegistry,
 }
 
-impl FeatureRegistryProto {
+impl FileFeatureRegistry {
     pub fn from_proto(proto_registry: Registry) -> Result<Self> {
         let registry = FeatureRegistry::try_from(proto_registry)?;
         Ok(Self { registry })
@@ -35,11 +35,12 @@ impl FeatureRegistryProto {
     fn feature_views_from_service(
         &self,
         service_name: &str,
-    ) -> Result<HashMap<RequestedFeature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         let service = self
             .registry
             .feature_services
             .get(service_name)
+            // TODO use custom error type for 404 error
             .ok_or(anyhow!("Requested feature service not found"))?
             .clone();
         let mut result = HashMap::new();
@@ -69,19 +70,9 @@ impl FeatureRegistryProto {
                     service_name
                 ))?
                 .clone();
-            feature_view.entity_names = feature_view
-                .entity_names
-                .into_iter()
-                .map(|key_name| {
-                    projection
-                        .join_key_map
-                        .get(&key_name)
-                        .map(|val| val.to_owned())
-                        .unwrap_or(key_name)
-                })
-                .collect();
+            feature_view.join_key_map = Some(projection.join_key_map);
             for feature_name in projection.features {
-                let req_feature = RequestedFeature {
+                let req_feature = Feature {
                     feature_view_name: projection.feature_view_name.clone(),
                     feature_name: feature_name.name.clone(),
                 };
@@ -93,8 +84,8 @@ impl FeatureRegistryProto {
 
     fn feature_views_from_names(
         &self,
-        names: &[RequestedFeature],
-    ) -> Result<HashMap<RequestedFeature, FeatureView>> {
+        names: &[Feature],
+    ) -> Result<HashMap<Feature, FeatureView>> {
         names
             .iter()
             .map(|req_feature| {
@@ -122,16 +113,16 @@ impl FeatureRegistryProto {
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
-    ) -> Result<HashMap<RequestedFeature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         match requested_features {
             RequestedFeatures::FeatureService(service_name) => {
                 self.feature_views_from_service(&service_name)
             }
             RequestedFeatures::FeatureNames(names) => {
                 let mut bad_requests = vec![];
-                let parsed_requested_features: Vec<RequestedFeature> = names
+                let parsed_requested_features: Vec<Feature> = names
                     .into_iter()
-                    .map(|f| RequestedFeature::try_from(f.as_str()))
+                    .map(|f| Feature::try_from(f.as_str()))
                     .filter_map(|r| r.map_err(|e| bad_requests.push(e)).ok())
                     .collect();
                 if !bad_requests.is_empty() {
@@ -152,11 +143,11 @@ impl FeatureRegistryProto {
 }
 
 #[async_trait]
-impl FeatureRegistryService for FeatureRegistryProto {
+impl FeatureRegistryService for FileFeatureRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<RequestedFeature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         let requested_features = RequestedFeatures::from(request);
         self.get_feature_views(requested_features)
     }
@@ -164,9 +155,9 @@ impl FeatureRegistryService for FeatureRegistryProto {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{GetOnlineFeatureRequest, RequestedFeature};
+    use crate::model::{GetOnlineFeatureRequest, Feature};
     use crate::registry::FeatureRegistryService;
-    use crate::registry::file_registry::FeatureRegistryProto;
+    use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
     use std::sync::Arc;
 
@@ -174,8 +165,8 @@ mod tests {
     fn create_feature_registry() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;
-        let requested_features = vec![RequestedFeature {
+        let feature_registry = FileFeatureRegistry::from_path(&registry_file)?;
+        let requested_features = vec![Feature {
             feature_view_name: "driver_hourly_stats_fresh".to_string(),
             feature_name: "conv_rate".to_string(),
         }];
@@ -188,11 +179,12 @@ mod tests {
     async fn get_features_by_name() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry_proto = FeatureRegistryProto::from_path(&registry_file)?;
+
+        let feature_registry_proto = FileFeatureRegistry::from_path(&registry_file)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
-        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()];
+        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = feature_registry_service
             .request_to_view_keys(&request_obj)
             .await?;
@@ -203,7 +195,7 @@ mod tests {
     async fn get_features_by_service() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry_proto = FeatureRegistryProto::from_path(&registry_file)?;
+        let feature_registry_proto = FileFeatureRegistry::from_path(&registry_file)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();

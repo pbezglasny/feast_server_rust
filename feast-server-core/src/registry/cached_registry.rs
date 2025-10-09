@@ -1,5 +1,5 @@
-use crate::model::{FeatureView, GetOnlineFeatureRequest, RequestedFeature};
-use crate::registry::{FeatureRegistryProto, FeatureRegistryService};
+use crate::model::{FeatureView, GetOnlineFeatureRequest, Feature};
+use crate::registry::{FileFeatureRegistry, FeatureRegistryService};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ impl CachedFileRegistry {
     ) -> Arc<CachedFileRegistry>
     where
         F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Result<FeatureRegistryProto>> + Send + 'static,
+        Fut: Future<Output = Result<FileFeatureRegistry>> + Send + 'static,
     {
         let feature_registry = feature_registry_fn().await;
         let result = Arc::new(CachedFileRegistry {
@@ -34,7 +34,7 @@ fn start_refresh_task<F, Fut>(
     ttl: u64,
 ) where
     F: Fn() -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<FeatureRegistryProto>> + Send + 'static,
+    Fut: Future<Output = Result<FileFeatureRegistry>> + Send + 'static,
 {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(ttl));
@@ -54,7 +54,7 @@ impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<RequestedFeature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         let registry = self.inner.load();
         registry.request_to_view_keys(request).await
     }
