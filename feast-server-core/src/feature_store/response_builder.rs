@@ -192,3 +192,90 @@ impl GetOnlineFeatureResponse {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::EntityKeySerializationVersion;
+    use crate::feast::types::value::Val;
+    use crate::feast::types::{EntityKey, Value};
+    use crate::key_serialization::serialize_key;
+    use anyhow::Result;
+    use chrono::{SubsecRound, Utc};
+    use prost::Message;
+    use std::collections::HashMap;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn try_from_builds_response_with_missing_values() -> Result<()> {
+        let mut entity_keys = HashMap::new();
+        entity_keys.insert(
+            "driver_id".to_string(),
+            vec![EntityId::Int(1001), EntityId::Int(1002)],
+        );
+
+        let event_ts = SystemTime::now();
+        let feature_value = Value {
+            val: Some(Val::Int64Val(42)),
+        };
+        let entity_key_bytes = serialize_key(
+            &EntityKey {
+                join_keys: vec!["driver_id".to_string()],
+                entity_values: vec![Value {
+                    val: Some(Val::Int64Val(1001)),
+                }],
+            },
+            EntityKeySerializationVersion::V3,
+        )?;
+
+        let row = OnlineStoreRow {
+            feature_view_name: "driver_hourly_stats".to_string(),
+            entity_key: entity_key_bytes,
+            feature_name: "acc_rate".to_string(),
+            value: feature_value.encode_to_vec(),
+            event_ts,
+            created_ts: event_ts,
+        };
+
+        let mut feature_view = FeatureView::default();
+        feature_view.name = "driver_hourly_stats".to_string();
+        feature_view.ttl = Duration::from_secs(3600);
+        feature_view.entity_names = vec!["driver_id".to_string()];
+
+        let mut feature_views = HashMap::new();
+        feature_views.insert(feature_view.name.clone(), feature_view);
+
+        let response =
+            GetOnlineFeatureResponse::try_from(entity_keys, vec![row], feature_views, false)?;
+
+        let mut expected = GetOnlineFeatureResponse::default();
+        expected.metadata.feature_names =
+            vec!["driver_id".to_string(), "acc_rate".to_string()];
+        expected.results.push(FeatureResults {
+            values: vec![
+                ValueWrapper::from(EntityId::Int(1001)),
+                ValueWrapper::from(EntityId::Int(1002)),
+            ],
+            statuses: vec![FeatureStatus::Present, FeatureStatus::Present],
+            event_timestamps: vec![
+                chrono::DateTime::<Utc>::UNIX_EPOCH,
+                chrono::DateTime::<Utc>::UNIX_EPOCH,
+            ],
+        });
+
+        expected.results.push(FeatureResults {
+            values: vec![
+                ValueWrapper(feature_value),
+                ValueWrapper(Value { val: None }),
+            ],
+            statuses: vec![FeatureStatus::Present, FeatureStatus::NotFound],
+            event_timestamps: vec![
+                chrono::DateTime::<Utc>::from(event_ts),
+                chrono::DateTime::<Utc>::from(SystemTime::UNIX_EPOCH).round_subsecs(0),
+            ],
+        });
+
+        assert_eq!(response, expected);
+        Ok(())
+    }
+}

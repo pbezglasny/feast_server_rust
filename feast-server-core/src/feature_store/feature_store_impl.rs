@@ -101,6 +101,21 @@ impl FeatureStore {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EntityColumnRef {
+    view_name: String,
+    column_name: String,
+}
+
+impl EntityColumnRef {
+    fn new(view_name: String, column_name: String) -> Self {
+        Self {
+            view_name,
+            column_name,
+        }
+    }
+}
+
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns mapping from requested feature to entity keys.
 /// TODO in return object replace value
@@ -108,8 +123,7 @@ fn feature_views_to_keys<'a>(
     feature_to_view: &'a HashMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
 ) -> Result<HashMap<&'a Feature, Vec<EntityKey>>> {
-    // (feature_view, entity_col_name) -> type
-    let mut entity_key_type: HashMap<Feature, value_type::Enum> = HashMap::new();
+    let mut entity_key_type: HashMap<EntityColumnRef, value_type::Enum> = HashMap::new();
     // mapping provided entity to list of features views
     let mut entity_to_view: HashMap<String, Vec<&str>> = HashMap::new();
     let mut reverse_join_key_mapping: HashMap<String, Vec<&str>> = HashMap::new();
@@ -126,7 +140,7 @@ fn feature_views_to_keys<'a>(
             let entry = entity_to_view.entry(entity_col.name.clone()).or_default();
             entry.push(feature_view.name.as_str());
             entity_key_type.insert(
-                Feature::new(feature_view.name.clone(), entity_col.name.clone()),
+                EntityColumnRef::new(feature_view.name.clone(), entity_col.name.clone()),
                 entity_col.value_type,
             );
         }
@@ -141,10 +155,7 @@ fn feature_views_to_keys<'a>(
             .unwrap_or_else(Vec::new);
         possible_keys.push(entity_id.as_str());
         for mapped_key in possible_keys {
-            for feature_view_name in entity_to_view
-                .get(mapped_key)
-                .unwrap_or(&Vec::new())
-            {
+            for feature_view_name in entity_to_view.get(mapped_key).unwrap_or(&Vec::new()) {
                 let mut value_entry = views_keys
                     .entry(feature_view_name.to_string())
                     .or_insert(Vec::with_capacity(entity_keys_values.len()));
@@ -156,7 +167,7 @@ fn feature_views_to_keys<'a>(
                     let entity_key = value_entry.get_mut(i).unwrap();
                     entity_key.join_keys.push(mapped_key.to_string());
                     let col_type = entity_key_type
-                        .get(&Feature::new(
+                        .get(&EntityColumnRef::new(
                             feature_view_name.to_string(),
                             mapped_key.to_string(),
                         ))
