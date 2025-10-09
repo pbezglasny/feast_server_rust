@@ -1,11 +1,25 @@
+FROM rust:1.90-trixie AS builder
+
+RUN mkdir -p /app/build
+
+WORKDIR /app/build
+
+RUN apt update && apt install protobuf-compiler -y
+
+#COPY cli feast-server-core grpc-server rest-server Cargo.toml Cargo.lock .
+
+COPY . .
+
+RUN cargo build --release
+
 FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /app
 
 WORKDIR /app
 
-COPY target/release/feast /app
+COPY --from=builder /app/build/target/release/feast /app
 
 ENTRYPOINT ["/app/feast"]
