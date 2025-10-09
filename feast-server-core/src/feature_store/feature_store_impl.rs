@@ -135,14 +135,14 @@ fn feature_views_to_keys<'a>(
     // view_name to key
     let mut views_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
     for (entity_id, entity_keys_values) in requested_entity_keys {
-        let mut default_entity_keys = Vec::new();
         let mut possible_keys = reverse_join_key_mapping
-            .get_mut(entity_id)
-            .unwrap_or(&mut default_entity_keys);
+            .get(entity_id)
+            .cloned()
+            .unwrap_or_else(Vec::new);
         possible_keys.push(entity_id.as_str());
-        for mapped_key in possible_keys.into_iter() {
+        for mapped_key in possible_keys {
             for feature_view_name in entity_to_view
-                .get(&mapped_key.to_string())
+                .get(mapped_key)
                 .unwrap_or(&Vec::new())
             {
                 let mut value_entry = views_keys
