@@ -249,6 +249,30 @@ mod tests {
         vec![feature_view_1, feature_view_2]
     }
 
+    fn assert_equal_results(
+        result: HashMap<&RequestedFeature, Vec<EntityKey>>,
+        mut expected: HashMap<&RequestedFeature, Vec<EntityKey>>,
+    ) {
+        let mut result_keys = result.keys().collect::<Vec<&&RequestedFeature>>();
+        let mut expected_keys = expected.keys().collect::<Vec<&&RequestedFeature>>();
+        result_keys.sort();
+        expected_keys.sort();
+        assert_eq!(result_keys, expected_keys);
+        for (key, result_values) in result.into_iter() {
+            let result_vec: Vec<EntityKeyWrapper> = result_values
+                .into_iter()
+                .map(|e| EntityKeyWrapper(e))
+                .collect();
+            let expected_vec: Vec<EntityKeyWrapper> = expected
+                .remove(key)
+                .unwrap()
+                .into_iter()
+                .map(|e| EntityKeyWrapper(e))
+                .collect();
+            assert_eq!(result_vec, expected_vec);
+        }
+    }
+
     #[test]
     fn feature_views_to_keys_test() -> Result<()> {
         let (feature_view_1, feature_view_2) = {
@@ -293,24 +317,7 @@ mod tests {
 
         let mut expected =
             HashMap::from([(&feature_1, entity_values_1), (&feature_2, entity_values_2)]);
-        let mut result_keys = result.keys().collect::<Vec<&&RequestedFeature>>();
-        let mut expected_keys = expected.keys().collect::<Vec<&&RequestedFeature>>();
-        result_keys.sort();
-        expected_keys.sort();
-        assert_eq!(result_keys, expected_keys);
-        for (key, result_values) in result.into_iter() {
-            let result_vec: Vec<EntityKeyWrapper> = result_values
-                .into_iter()
-                .map(|e| EntityKeyWrapper(e))
-                .collect();
-            let expected_vec: Vec<EntityKeyWrapper> = expected
-                .remove(key)
-                .unwrap()
-                .into_iter()
-                .map(|e| EntityKeyWrapper(e))
-                .collect();
-            assert_eq!(result_vec, expected_vec);
-        }
+        assert_equal_results(result, expected);
         Ok(())
     }
 
@@ -343,24 +350,7 @@ mod tests {
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
 
         let mut expected = HashMap::from([(&feature_1, entity_values_1)]);
-        let mut result_keys = result.keys().collect::<Vec<&&RequestedFeature>>();
-        let mut expected_keys = expected.keys().collect::<Vec<&&RequestedFeature>>();
-        result_keys.sort();
-        expected_keys.sort();
-        assert_eq!(result_keys, expected_keys);
-        for (key, result_values) in result.into_iter() {
-            let result_vec: Vec<EntityKeyWrapper> = result_values
-                .into_iter()
-                .map(|e| EntityKeyWrapper(e))
-                .collect();
-            let expected_vec: Vec<EntityKeyWrapper> = expected
-                .remove(key)
-                .unwrap()
-                .into_iter()
-                .map(|e| EntityKeyWrapper(e))
-                .collect();
-            assert_eq!(result_vec, expected_vec);
-        }
+        assert_equal_results(result, expected);
         Ok(())
     }
 
