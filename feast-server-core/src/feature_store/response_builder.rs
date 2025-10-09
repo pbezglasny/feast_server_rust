@@ -3,39 +3,14 @@ use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value};
 use crate::key_serialization::deserialize_key;
 use crate::model::{
-    EntityId, FeatureResults, FeatureStatus, FeatureView, GetOnlineFeatureResponse, ValueWrapper,
+    EntityId, Feature, FeatureResults, FeatureStatus, FeatureView, GetOnlineFeatureResponse,
+    ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
 use chrono::{DateTime, SubsecRound};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct Feature {
-    feature_view: String,
-    feature_name: String,
-}
-
-impl Feature {
-    fn new(feature_view: String, feature_name: String) -> Self {
-        Self {
-            feature_view,
-            feature_name,
-        }
-    }
-
-    fn entity_feature(feature_name: String) -> Self {
-        Self {
-            feature_view: "".to_string(),
-            feature_name,
-        }
-    }
-
-    fn full_name(&self) -> String {
-        format!("{}__{}", self.feature_view, self.feature_name)
-    }
-}
 
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
@@ -44,6 +19,11 @@ struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
+    /// Parameters:
+    /// `entity_keys` - passed by user entity key for requested features
+    /// `rows` - data return by onlinestore
+    /// `feature_views` - mapping feature_view name to its declaration
+    /// `full_feature_names` - use full feature names in result object
     pub fn try_from(
         entity_keys: HashMap<String, Vec<EntityId>>,
         rows: Vec<OnlineStoreRow>,
@@ -131,13 +111,17 @@ impl GetOnlineFeatureResponse {
         }
 
         let mut result = GetOnlineFeatureResponse::default();
+        let mut processed_features: HashSet<Feature> = HashSet::new();
 
         for (entity_key_name, values) in entity_keys {
             let mut associated_values_map =
                 feature_values.remove(&entity_key_name).unwrap_or_default();
-            let associated_features = entity_to_features
+            let associated_features: HashSet<Feature> = entity_to_features
                 .remove(&entity_key_name)
-                .unwrap_or_default();
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|f| !processed_features.contains(f))
+                .collect();
             let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
             for entity_val in values.into_iter() {
                 let mut values = associated_values_map
@@ -192,6 +176,7 @@ impl GetOnlineFeatureResponse {
                     feature.feature_name.clone()
                 };
                 result.metadata.feature_names.push(feature_name);
+                processed_features.insert(feature);
             }
         }
         Ok(result)

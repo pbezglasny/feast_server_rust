@@ -1,6 +1,6 @@
 use crate::feast::types::{EntityKey, value_type};
 use crate::model::{
-    EntityId, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse, RequestedFeature,
+    EntityId, Feature, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse,
 };
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::registry::FeatureRegistryService;
@@ -31,18 +31,18 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: HashMap<RequestedFeature, FeatureView> =
+        let feature_to_view: HashMap<Feature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
 
-        let keys_by_view: HashMap<&RequestedFeature, Vec<EntityKey>> =
+        let keys_by_view: HashMap<&Feature, Vec<EntityKey>> =
             feature_views_to_keys(&feature_to_view, &request.entities)?;
 
-        // feature view name to entity keys
+        // feature view name to requested entity keys values
         let mut view_to_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
         // feature view name to features
         let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
 
-        // feature view name to ttl
+        // feature view name to feature view
         let mut view_name_to_view: HashMap<String, FeatureView> = HashMap::new();
 
         for (view_name, result_keys) in keys_by_view.into_iter() {
@@ -103,27 +103,30 @@ impl FeatureStore {
 
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns mapping from requested feature to entity keys.
+/// TODO in return object replace valeu
 fn feature_views_to_keys<'a>(
-    feature_to_view: &'a HashMap<RequestedFeature, FeatureView>,
+    feature_to_view: &'a HashMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
-) -> Result<HashMap<&'a RequestedFeature, Vec<EntityKey>>> {
+) -> Result<HashMap<&'a Feature, Vec<EntityKey>>> {
     // (feature_view, entity_col_name) -> type
-    let mut entity_key_type: HashMap<(String, String), value_type::Enum> = HashMap::new();
+    let mut entity_key_type: HashMap<Feature, value_type::Enum> = HashMap::new();
     // mapping provided entity to list of features views
     let mut entity_to_view: HashMap<String, Vec<&str>> = HashMap::new();
-    let mut reverse_join_key_mapping: HashMap<String, &str> = HashMap::new();
+    let mut reverse_join_key_mapping: HashMap<String, Vec<&str>> = HashMap::new();
     for feature_view in feature_to_view.values() {
         if let Some(mapping) = &feature_view.join_key_map {
-            // TODO make join key mapping per view
             for (from, to) in mapping {
-                reverse_join_key_mapping.insert(to.clone(), from.as_str());
+                reverse_join_key_mapping
+                    .entry(to.clone())
+                    .or_default()
+                    .push(from);
             }
         }
         for entity_col in &feature_view.entity_columns {
             let entry = entity_to_view.entry(entity_col.name.clone()).or_default();
             entry.push(feature_view.name.as_str());
             entity_key_type.insert(
-                (feature_view.name.clone(), entity_col.name.clone()),
+                Feature::new(feature_view.name.clone(), entity_col.name.clone()),
                 entity_col.value_type,
             );
         }
@@ -132,32 +135,41 @@ fn feature_views_to_keys<'a>(
     // view_name to key
     let mut views_keys: HashMap<String, Vec<EntityKey>> = HashMap::new();
     for (entity_id, entity_keys_values) in requested_entity_keys {
-        let mapped_key = reverse_join_key_mapping
-            .get(entity_id.as_str())
-            .copied()
-            .unwrap_or(entity_id.as_str());
-        for feature_view_name in entity_to_view.get(mapped_key).unwrap_or(&Vec::new()) {
-            let mut value_entry = views_keys
-                .entry(feature_view_name.to_string())
-                .or_insert(Vec::with_capacity(entity_keys_values.len()));
-            for (i, value) in entity_keys_values.iter().enumerate() {
-                if i == value_entry.len() {
-                    let entity_key = EntityKey::default();
-                    value_entry.push(entity_key);
+        let mut default_entity_keys = Vec::new();
+        let mut possible_keys = reverse_join_key_mapping
+            .get_mut(entity_id)
+            .unwrap_or(&mut default_entity_keys);
+        possible_keys.push(entity_id.as_str());
+        for mapped_key in possible_keys.into_iter() {
+            for feature_view_name in entity_to_view
+                .get(&mapped_key.to_string())
+                .unwrap_or(&Vec::new())
+            {
+                let mut value_entry = views_keys
+                    .entry(feature_view_name.to_string())
+                    .or_insert(Vec::with_capacity(entity_keys_values.len()));
+                for (i, value) in entity_keys_values.iter().enumerate() {
+                    if i == value_entry.len() {
+                        let entity_key = EntityKey::default();
+                        value_entry.push(entity_key);
+                    }
+                    let entity_key = value_entry.get_mut(i).unwrap();
+                    entity_key.join_keys.push(mapped_key.to_string());
+                    let col_type = entity_key_type
+                        .get(&Feature::new(
+                            feature_view_name.to_string(),
+                            mapped_key.to_string(),
+                        ))
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Could not find type for entity column '{}' in feature view '{}'",
+                                mapped_key,
+                                feature_view_name
+                            )
+                        })?;
+                    let val = value.to_proto_value(*col_type)?;
+                    entity_key.entity_values.push(val);
                 }
-                let entity_key = value_entry.get_mut(i).unwrap();
-                entity_key.join_keys.push(mapped_key.to_string());
-                let col_type = entity_key_type
-                    .get(&(feature_view_name.to_string(), mapped_key.to_string()))
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "Could not find type for entity column '{}' in feature view '{}'",
-                            mapped_key,
-                            feature_view_name
-                        )
-                    })?;
-                let val = value.to_proto_value(*col_type)?;
-                entity_key.entity_values.push(val);
             }
         }
     }
@@ -256,11 +268,11 @@ mod tests {
     }
 
     fn assert_equal_results(
-        result: HashMap<&RequestedFeature, Vec<EntityKey>>,
-        mut expected: HashMap<&RequestedFeature, Vec<EntityKey>>,
+        result: HashMap<&Feature, Vec<EntityKey>>,
+        mut expected: HashMap<&Feature, Vec<EntityKey>>,
     ) {
-        let mut result_keys = result.keys().collect::<Vec<&&RequestedFeature>>();
-        let mut expected_keys = expected.keys().collect::<Vec<&&RequestedFeature>>();
+        let mut result_keys = result.keys().collect::<Vec<&&Feature>>();
+        let mut expected_keys = expected.keys().collect::<Vec<&&Feature>>();
         result_keys.sort();
         expected_keys.sort();
         assert_eq!(result_keys, expected_keys);
@@ -285,11 +297,11 @@ mod tests {
             let features = get_features_views();
             (features[0].clone(), features[1].clone())
         };
-        let feature_1 = RequestedFeature {
+        let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
             feature_name: "col1".to_string(),
         };
-        let feature_2 = RequestedFeature {
+        let feature_2 = Feature {
             feature_view_name: "feature_view2".to_string(),
             feature_name: "col2".to_string(),
         };
@@ -306,11 +318,11 @@ mod tests {
         ]);
         let result = feature_views_to_keys(&features, &requested_entity_keys)?;
         assert_eq!(result.len(), 2);
-        let feature_1 = RequestedFeature {
+        let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
             feature_name: "col1".to_string(),
         };
-        let feature_2 = RequestedFeature {
+        let feature_2 = Feature {
             feature_view_name: "feature_view2".to_string(),
             feature_name: "col2".to_string(),
         };
@@ -337,7 +349,7 @@ mod tests {
             "entity_col_1".to_string(),
             "alias_1".to_string(),
         )]));
-        let feature_1 = RequestedFeature {
+        let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
             feature_name: "col1".to_string(),
         };
@@ -348,7 +360,7 @@ mod tests {
         )]);
         let result = feature_views_to_keys(&features, &requested_entity_keys)?;
         assert_eq!(result.len(), 1);
-        let feature_1 = RequestedFeature {
+        let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
             feature_name: "col1".to_string(),
         };
@@ -363,14 +375,14 @@ mod tests {
     use crate::feast::types::Value;
     use crate::feature_store::feature_store_impl::FeatureStore;
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
-    use crate::registry::file_registry::FeatureRegistryProto;
+    use crate::registry::file_registry::FileFeatureRegistry;
     use crate::util::EntityKeyWrapper;
     use anyhow::Result;
 
     async fn get_feature_store() -> Result<FeatureStore> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry = FeatureRegistryProto::from_path(&registry_file)?;
+        let feature_registry = FileFeatureRegistry::from_path(&registry_file)?;
         let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
         let sqlite_store = SqliteOnlineStore::from_options(
             &sqlite_path,

@@ -230,14 +230,34 @@ pub enum RequestedFeatures {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RequestedFeature {
+pub struct Feature {
     pub feature_view_name: String,
     pub feature_name: String,
 }
 
+impl Feature {
+    pub fn new(feature_view_name: String, feature_name: String) -> Self {
+        Self {
+            feature_view_name,
+            feature_name,
+        }
+    }
+
+    pub fn entity_feature(feature_name: String) -> Self {
+        Self {
+            feature_view_name: "".to_string(),
+            feature_name,
+        }
+    }
+
+    pub fn full_name(&self) -> String {
+        format!("{}__{}", self.feature_view_name, self.feature_name)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestedFeatureWithTTL<'a> {
-    pub requested_feature: &'a RequestedFeature,
+    pub requested_feature: &'a Feature,
     ttl: Duration,
 }
 
@@ -255,7 +275,7 @@ impl<'a> Hash for RequestedFeatureWithTTL<'a> {
     }
 }
 
-impl TryFrom<&str> for RequestedFeature {
+impl TryFrom<&str> for Feature {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self> {

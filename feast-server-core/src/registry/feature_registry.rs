@@ -1,6 +1,6 @@
 use crate::config::{Provider, RegistryConfig, RegistryType};
 use crate::registry::cached_registry::CachedFileRegistry;
-use crate::registry::{FeatureRegistryProto, FeatureRegistryService};
+use crate::registry::{FileFeatureRegistry, FeatureRegistryService};
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,7 +34,7 @@ pub async fn get_registry(
                     let producer_fn = {
                         move || {
                             let path = path.clone();
-                            async move { FeatureRegistryProto::from_path(&path) }
+                            async move { FileFeatureRegistry::from_path(&path) }
                         }
                     };
                     let cached_registry =
@@ -45,7 +45,7 @@ pub async fn get_registry(
                         .await;
                     Ok(cached_registry)
                 } else {
-                    let registry = FeatureRegistryProto::from_path(path.as_str())?;
+                    let registry = FileFeatureRegistry::from_path(path.as_str())?;
                     Ok(Arc::new(registry))
                 }
             }

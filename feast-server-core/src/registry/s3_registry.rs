@@ -1,6 +1,6 @@
-use crate::model::{FeatureView, GetOnlineFeatureRequest, RequestedFeature};
+use crate::model::{FeatureView, GetOnlineFeatureRequest, Feature};
 use crate::registry::cached_registry::CachedFileRegistry;
-use crate::registry::{FeatureRegistryProto, FeatureRegistryService};
+use crate::registry::{FileFeatureRegistry, FeatureRegistryService};
 use anyhow::Result;
 use async_trait::async_trait;
 use prost::Message;
@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct S3Registry {
-    registry: FeatureRegistryProto,
+    registry: FileFeatureRegistry,
 }
 
 fn parse_s3_url(s3_url: &str) -> Result<(String, String)> {
@@ -62,7 +62,7 @@ impl S3Registry {
         s3_client: Arc<aws_sdk_s3::Client>,
         bucket: &str,
         key: &str,
-    ) -> Result<FeatureRegistryProto> {
+    ) -> Result<FileFeatureRegistry> {
         let proto_file = s3_client
             .get_object()
             .bucket(bucket)
@@ -71,7 +71,7 @@ impl S3Registry {
             .await?;
         let data = proto_file.body.collect().await?.into_bytes();
         let registry_proto = crate::feast::core::Registry::decode(&*data)?;
-        FeatureRegistryProto::from_proto(registry_proto)
+        FileFeatureRegistry::from_proto(registry_proto)
     }
 }
 
@@ -80,7 +80,7 @@ impl FeatureRegistryService for S3Registry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<RequestedFeature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         self.registry.request_to_view_keys(request).await
     }
 }
