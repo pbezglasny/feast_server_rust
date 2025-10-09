@@ -1,0 +1,9 @@
+*.log
+.env
+
+Dockerfile
+.venv
+dev
+target
+.git
+
