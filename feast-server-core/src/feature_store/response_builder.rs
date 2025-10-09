@@ -19,6 +19,7 @@ struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
+    ///
     /// Parameters:
     /// `entity_keys` - passed by user entity key for requested features
     /// `rows` - data return by onlinestore
@@ -89,24 +90,28 @@ impl GetOnlineFeatureResponse {
             );
         }
 
-        let join_key_alias_map = feature_views
+        let join_key_alias_map: HashMap<String, Vec<String>> = feature_views
             .values()
             .filter_map(|fv| fv.join_key_map.clone())
             .fold(HashMap::new(), |mut acc, fv| {
-                acc.extend(fv);
+                for (k, v) in fv.into_iter() {
+                    acc.entry(k).or_default().push(v);
+                }
                 acc
             });
 
-        // TODO do not copy if request contains original name and alias name and avoid duplication
-        for (original_name, alias_name) in join_key_alias_map.into_iter() {
-            if entity_to_features.contains_key(&original_name) {
-                entity_to_features.insert(
-                    alias_name.clone(),
-                    entity_to_features[&original_name].clone(),
-                );
-            }
-            if feature_values.contains_key(&original_name) {
-                feature_values.insert(alias_name, feature_values[&original_name].clone());
+        // TODO do not copy if request contains original name and alias name to avoid duplication
+        for (original_name, alias_names) in join_key_alias_map.into_iter() {
+            for alias_name in alias_names.into_iter() {
+                if entity_to_features.contains_key(&original_name) {
+                    entity_to_features.insert(
+                        alias_name.clone(),
+                        entity_to_features[&original_name].clone(),
+                    );
+                }
+                if feature_values.contains_key(&original_name) {
+                    feature_values.insert(alias_name, feature_values[&original_name].clone());
+                }
             }
         }
 
