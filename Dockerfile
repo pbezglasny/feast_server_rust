@@ -4,22 +4,16 @@ RUN mkdir -p /app/build
 
 WORKDIR /app/build
 
-RUN apt update && apt install protobuf-compiler -y
-
-#COPY cli feast-server-core grpc-server rest-server Cargo.toml Cargo.lock .
+RUN apt update \
+	&& apt install protobuf-compiler -y \
+	&& rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
 RUN cargo build --release
 
-FROM debian:trixie-slim
+FROM gcr.io/distroless/cc-debian12
 
-RUN apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/build/target/release/feast /
 
-RUN mkdir /app
-
-WORKDIR /app
-
-COPY --from=builder /app/build/target/release/feast /app
-
-ENTRYPOINT ["/app/feast"]
+ENTRYPOINT ["./feast"]
