@@ -30,6 +30,7 @@ RUN mkdir -p cli/src && echo "fn main() {}" > cli/src/main.rs && \
 
 # Build dependencies only. This layer will be cached if Cargo files don't change.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
+	--mount=type=cache,target=/app/build/target \
     cargo build --release
 
 COPY . .
