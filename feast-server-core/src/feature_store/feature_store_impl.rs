@@ -418,15 +418,6 @@ mod tests {
             full_feature_names: Some(false),
         };
         let result = store.get_online_features(request).await?;
-        let metadata = GetOnlineFeatureResponseMetadata {
-            feature_names: vec![
-                "driver_id".to_string(),
-                "conv_rate".to_string(),
-                "acc_rate".to_string(),
-            ],
-        };
-        let results = vec![];
-        let expected = GetOnlineFeatureResponse { metadata, results };
         assert_eq!(result.metadata.feature_names.len(), 3);
         assert_eq!(result.results.len(), 3);
         for (i, feature) in result.metadata.feature_names.iter().enumerate() {

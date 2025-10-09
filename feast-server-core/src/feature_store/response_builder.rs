@@ -89,12 +89,14 @@ impl GetOnlineFeatureResponse {
             );
         }
 
-        let alias_to_original_map: HashMap<String, String> = feature_views
+        let mut alias_to_original_map: HashMap<String, Vec<String>> = feature_views
             .values()
             .filter_map(|fv| fv.join_key_map.as_ref())
             .fold(HashMap::new(), |mut acc, join_key_mapping| {
                 for (original_name, alias_name) in join_key_mapping {
-                    acc.insert(alias_name.clone(), original_name.clone());
+                    acc.entry(alias_name.clone())
+                        .or_insert(Vec::new())
+                        .push(original_name.clone());
                 }
                 acc
             })
@@ -105,72 +107,86 @@ impl GetOnlineFeatureResponse {
         let mut processed_features: HashSet<Feature> = HashSet::new();
 
         for (entity_key_name, values) in entity_keys {
-            let lookup_key = alias_to_original_map
-                .get(&entity_key_name)
-                .unwrap_or(&entity_key_name);
-
-            let mut associated_values_map = feature_values.remove(lookup_key).unwrap_or_default();
-            let associated_features: HashSet<Feature> = entity_to_features
-                .remove(lookup_key)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|f| !processed_features.contains(f))
-                .collect();
-            let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
-            for entity_val in values.into_iter() {
-                let mut values = associated_values_map
-                    .remove(&entity_val)
-                    .unwrap_or_default();
-                {
-                    let entity_feature = Feature::entity_feature(entity_key_name.clone());
-                    let mut entity_result = features.entry(entity_feature).or_default();
-                    entity_result.values.push(ValueWrapper::from(entity_val));
-                    entity_result.statuses.push(FeatureStatus::Present);
-                    entity_result.event_timestamps.push(DateTime::UNIX_EPOCH);
+            let mut lookup_keys: Vec<String> = alias_to_original_map
+                .remove(&entity_key_name)
+                .unwrap_or_default();
+            lookup_keys.push(entity_key_name.clone());
+            for lookup_key in &lookup_keys {
+                let entity_feature = Feature::entity_feature(lookup_key.clone());
+                if processed_features.contains(&entity_feature) {
+                    continue;
                 }
-                for associate_feature in &associated_features {
-                    let value_opt = values.remove(associate_feature);
-                    let feature_result = features.entry(associate_feature.clone()).or_default();
-                    match value_opt {
-                        None => {
-                            feature_result
-                                .values
-                                .push(ValueWrapper(Value { val: None }));
-                            feature_result.statuses.push(FeatureStatus::NotFound);
-                            feature_result
-                                .event_timestamps
-                                .push(DateTime::from(SystemTime::UNIX_EPOCH).round_subsecs(0));
-                        }
-                        Some(ResponseFeatureRow(value, status, event_ts)) => {
-                            feature_result.values.push(ValueWrapper(value));
-                            feature_result.statuses.push(status);
-                            feature_result
-                                .event_timestamps
-                                .push(DateTime::from(event_ts));
+                processed_features.insert(entity_feature.clone());
+                let mut associated_values_map =
+                    feature_values.remove(lookup_key).unwrap_or_default();
+                let associated_features: HashSet<Feature> = entity_to_features
+                    .remove(lookup_key)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|f| !processed_features.contains(f))
+                    .collect();
+                let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
+                for entity_val in &values {
+                    let mut values = associated_values_map
+                        .remove(&entity_val)
+                        .unwrap_or_default();
+                    {
+                        let mut entity_result = features.entry(entity_feature.clone()).or_default();
+                        entity_result
+                            .values
+                            .push(ValueWrapper::from(entity_val.clone()));
+                        entity_result.statuses.push(FeatureStatus::Present);
+                        entity_result.event_timestamps.push(DateTime::UNIX_EPOCH);
+                    }
+                    for associate_feature in &associated_features {
+                        let value_opt = values.remove(associate_feature);
+                        let feature_result = features.entry(associate_feature.clone()).or_default();
+                        match value_opt {
+                            None => {
+                                feature_result
+                                    .values
+                                    .push(ValueWrapper(Value { val: None }));
+                                feature_result.statuses.push(FeatureStatus::NotFound);
+                                feature_result
+                                    .event_timestamps
+                                    .push(DateTime::from(SystemTime::UNIX_EPOCH).round_subsecs(0));
+                            }
+                            Some(ResponseFeatureRow(value, status, event_ts)) => {
+                                feature_result.values.push(ValueWrapper(value));
+                                feature_result.statuses.push(status);
+                                feature_result
+                                    .event_timestamps
+                                    .push(DateTime::from(event_ts));
+                            }
                         }
                     }
                 }
-            }
 
-            result.metadata.feature_names.push(entity_key_name.clone());
-            result.results.push(
-                features
-                    .remove(&Feature::entity_feature(entity_key_name.clone()))
-                    .ok_or(anyhow!("Missing values for feature {}", entity_key_name))?,
-            );
+                result
+                    .metadata
+                    .feature_names
+                    .push(entity_feature.feature_name.clone());
+                result.results.push(
+                    features
+                        .remove(&Feature::entity_feature(
+                            entity_feature.feature_name.clone(),
+                        ))
+                        .ok_or(anyhow!("Missing values for entity {}", entity_key_name))?,
+                );
 
-            for feature in associated_features {
-                result.results.push(features.remove(&feature).ok_or(anyhow!(
-                    "Missing values for feature {}",
-                    feature.full_name()
-                ))?);
-                let feature_name = if full_feature_names {
-                    feature.full_name()
-                } else {
-                    feature.feature_name.clone()
-                };
-                result.metadata.feature_names.push(feature_name);
-                processed_features.insert(feature);
+                for feature in associated_features {
+                    result.results.push(features.remove(&feature).ok_or(anyhow!(
+                        "Missing values for feature {}",
+                        feature.full_name()
+                    ))?);
+                    let feature_name = if full_feature_names {
+                        feature.full_name()
+                    } else {
+                        feature.feature_name.clone()
+                    };
+                    result.metadata.feature_names.push(feature_name);
+                    processed_features.insert(feature);
+                }
             }
         }
         Ok(result)
