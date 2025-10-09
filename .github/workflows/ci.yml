@@ -33,4 +33,4 @@ jobs:
           version: "32.x"
 
       - name: Cargo test (build and test all targets)
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets && cargo clippy
