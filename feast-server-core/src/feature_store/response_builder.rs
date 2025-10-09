@@ -15,7 +15,6 @@ use std::time::{Duration, SystemTime};
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
 
-// TODO add support of full feature name in result
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
@@ -90,39 +89,29 @@ impl GetOnlineFeatureResponse {
             );
         }
 
-        let join_key_alias_map: HashMap<String, Vec<String>> = feature_views
+        let alias_to_original_map: HashMap<String, String> = feature_views
             .values()
-            .filter_map(|fv| fv.join_key_map.clone())
-            .fold(HashMap::new(), |mut acc, fv| {
-                for (k, v) in fv.into_iter() {
-                    acc.entry(k).or_default().push(v);
+            .filter_map(|fv| fv.join_key_map.as_ref())
+            .fold(HashMap::new(), |mut acc, join_key_mapping| {
+                for (original_name, alias_name) in join_key_mapping {
+                    acc.insert(alias_name.clone(), original_name.clone());
                 }
                 acc
-            });
-
-        // TODO do not copy if request contains original name and alias name to avoid duplication
-        for (original_name, alias_names) in join_key_alias_map.into_iter() {
-            for alias_name in alias_names.into_iter() {
-                if entity_to_features.contains_key(&original_name) {
-                    entity_to_features.insert(
-                        alias_name.clone(),
-                        entity_to_features[&original_name].clone(),
-                    );
-                }
-                if feature_values.contains_key(&original_name) {
-                    feature_values.insert(alias_name, feature_values[&original_name].clone());
-                }
-            }
-        }
+            })
+            .into_iter()
+            .collect();
 
         let mut result = GetOnlineFeatureResponse::default();
         let mut processed_features: HashSet<Feature> = HashSet::new();
 
         for (entity_key_name, values) in entity_keys {
-            let mut associated_values_map =
-                feature_values.remove(&entity_key_name).unwrap_or_default();
+            let lookup_key = alias_to_original_map
+                .get(&entity_key_name)
+                .unwrap_or(&entity_key_name);
+
+            let mut associated_values_map = feature_values.remove(lookup_key).unwrap_or_default();
             let associated_features: HashSet<Feature> = entity_to_features
-                .remove(&entity_key_name)
+                .remove(lookup_key)
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|f| !processed_features.contains(f))
@@ -154,7 +143,7 @@ impl GetOnlineFeatureResponse {
                         }
                         Some(ResponseFeatureRow(value, status, event_ts)) => {
                             feature_result.values.push(ValueWrapper(value));
-                            feature_result.statuses.push(FeatureStatus::Present);
+                            feature_result.statuses.push(status);
                             feature_result
                                 .event_timestamps
                                 .push(DateTime::from(event_ts));
