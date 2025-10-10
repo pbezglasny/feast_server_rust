@@ -128,7 +128,7 @@ impl GetOnlineFeatureResponse {
                 let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
                 for entity_val in &values {
                     let mut values = associated_values_map
-                        .remove(&entity_val)
+                        .remove(entity_val)
                         .unwrap_or_default();
                     {
                         let mut entity_result = features.entry(entity_feature.clone()).or_default();
