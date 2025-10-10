@@ -1,5 +1,5 @@
 use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
-use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
+use crate::registry::{FeatureRegistryService, FileFeatureRegistry, RegistryLookupResult};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
@@ -54,7 +54,7 @@ impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<RegistryLookupResult> {
         let registry = self.inner.load();
         registry.request_to_view_keys(request).await
     }

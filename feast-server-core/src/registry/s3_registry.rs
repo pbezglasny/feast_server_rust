@@ -1,6 +1,6 @@
 use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
 use crate::registry::cached_registry::CachedFileRegistry;
-use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
+use crate::registry::{FeatureRegistryService, FileFeatureRegistry, RegistryLookupResult};
 use anyhow::Result;
 use async_trait::async_trait;
 use prost::Message;
@@ -80,7 +80,7 @@ impl FeatureRegistryService for S3Registry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<RegistryLookupResult> {
         self.registry.request_to_view_keys(request).await
     }
 }

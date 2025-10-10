@@ -3,7 +3,7 @@ use crate::model::{
     EntityId, Feature, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse,
 };
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use crate::registry::FeatureRegistryService;
+use crate::registry::{FeatureRegistryService, RegistryLookupResult};
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,8 +30,10 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: HashMap<Feature, FeatureView> =
-            self.registry.request_to_view_keys(&request).await?;
+        let RegistryLookupResult {
+            feature_to_view,
+            ordered_features,
+        } = self.registry.request_to_view_keys(&request).await?;
 
         let keys_by_view: HashMap<&Feature, Arc<Vec<EntityKey>>> =
             feature_views_to_keys(&feature_to_view, &request.entities)?;
@@ -54,12 +56,22 @@ impl FeatureStore {
                 .or_default();
         }
 
-        for (requested_feature, fv) in feature_to_view.into_iter() {
-            view_features
-                .entry(requested_feature.feature_view_name.clone())
-                .or_default()
-                .push(requested_feature.feature_name.clone());
-            view_name_to_view.insert(fv.name.clone(), fv);
+        for requested_feature in &ordered_features {
+            if let Some(fv) = feature_to_view.get(requested_feature) {
+                view_features
+                    .entry(requested_feature.feature_view_name.clone())
+                    .or_default()
+                    .push(requested_feature.feature_name.clone());
+                view_name_to_view
+                    .entry(fv.name.clone())
+                    .or_insert_with(|| fv.clone());
+            }
+        }
+        // ensure we still cache views that may not have requested features (defensive)
+        for fv in feature_to_view.values() {
+            view_name_to_view
+                .entry(fv.name.clone())
+                .or_insert_with(|| fv.clone());
         }
 
         let mut join_set = JoinSet::new();
@@ -103,6 +115,7 @@ impl FeatureStore {
             request.entities,
             clean_data,
             view_name_to_view,
+            &ordered_features,
             request.full_feature_names.unwrap_or(false),
         )
     }

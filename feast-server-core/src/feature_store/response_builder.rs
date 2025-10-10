@@ -27,6 +27,7 @@ impl GetOnlineFeatureResponse {
         entity_keys: HashMap<String, Vec<EntityId>>,
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<String, FeatureView>,
+        ordered_features: &[Feature],
         full_feature_names: bool,
     ) -> Result<Self> {
         // feature name to mapping where key is entity id value from request and values are
@@ -109,11 +110,16 @@ impl GetOnlineFeatureResponse {
         let mut result = GetOnlineFeatureResponse::default();
         let mut processed_features: HashSet<Feature> = HashSet::new();
 
-        for (entity_key_name, values) in entity_keys {
+        let mut sorted_entity_keys: Vec<(String, Vec<EntityId>)> =
+            entity_keys.into_iter().collect();
+        sorted_entity_keys.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (entity_key_name, values) in sorted_entity_keys {
             let mut lookup_keys: Vec<String> = alias_to_original_map
                 .remove(&entity_key_name)
                 .unwrap_or_default();
             lookup_keys.push(entity_key_name.clone());
+            lookup_keys.sort();
             for lookup_key in &lookup_keys {
                 let entity_feature = Feature::entity_feature(lookup_key.clone());
                 if processed_features.contains(&entity_feature) {
@@ -122,12 +128,23 @@ impl GetOnlineFeatureResponse {
                 processed_features.insert(entity_feature.clone());
                 let mut associated_values_map =
                     feature_values.remove(lookup_key).unwrap_or_default();
-                let associated_features: HashSet<Feature> = entity_to_features
-                    .remove(lookup_key)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|f| !processed_features.contains(f))
+                let associated_feature_candidates =
+                    entity_to_features.remove(lookup_key).unwrap_or_default();
+                let mut associated_features: Vec<Feature> = ordered_features
+                    .iter()
+                    .filter(|feature| !processed_features.contains(feature))
+                    .filter(|feature| associated_feature_candidates.contains(*feature))
+                    .cloned()
                     .collect();
+                if associated_features.len() < associated_feature_candidates.len() {
+                    let mut remaining: Vec<Feature> = associated_feature_candidates
+                        .into_iter()
+                        .filter(|f| !processed_features.contains(f))
+                        .filter(|f| !associated_features.contains(f))
+                        .collect();
+                    remaining.sort();
+                    associated_features.extend(remaining);
+                }
                 let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
                 for entity_val in &values {
                     let mut values = associated_values_map.remove(entity_val).unwrap_or_default();
@@ -243,8 +260,18 @@ mod tests {
         let mut feature_views = HashMap::new();
         feature_views.insert(feature_view.name.clone(), feature_view);
 
-        let response =
-            GetOnlineFeatureResponse::try_from(entity_keys, vec![row], feature_views, false)?;
+        let ordered_features = vec![Feature::new(
+            "driver_hourly_stats".to_string(),
+            "acc_rate".to_string(),
+        )];
+
+        let response = GetOnlineFeatureResponse::try_from(
+            entity_keys,
+            vec![row],
+            feature_views,
+            &ordered_features,
+            false,
+        )?;
 
         let mut expected = GetOnlineFeatureResponse::default();
         expected.metadata.feature_names = vec!["driver_id".to_string(), "acc_rate".to_string()];

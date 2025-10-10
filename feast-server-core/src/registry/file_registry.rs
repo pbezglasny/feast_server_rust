@@ -3,7 +3,7 @@ use crate::model::{
     Feature, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest,
     RequestedFeatures,
 };
-use crate::registry::FeatureRegistryService;
+use crate::registry::{FeatureRegistryService, RegistryLookupResult};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use prost::Message;
@@ -46,10 +46,7 @@ impl FileFeatureRegistry {
         Ok(Self { registry })
     }
 
-    fn feature_views_from_service(
-        &self,
-        service_name: &str,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    fn feature_views_from_service(&self, service_name: &str) -> Result<RegistryLookupResult> {
         let service = self
             .registry
             .feature_services
@@ -58,6 +55,7 @@ impl FileFeatureRegistry {
             .ok_or(anyhow!("Requested feature service not found"))?
             .clone();
         let mut result = HashMap::new();
+        let mut ordered_features = Vec::new();
         let FeatureService {
             name,
             project,
@@ -90,33 +88,41 @@ impl FileFeatureRegistry {
                     feature_view_name: projection.feature_view_name.clone(),
                     feature_name: feature_name.name.clone(),
                 };
+                ordered_features.push(req_feature.clone());
                 result.insert(req_feature, feature_view.clone());
             }
         }
-        Ok(result)
+        Ok(RegistryLookupResult {
+            feature_to_view: result,
+            ordered_features,
+        })
     }
 
-    fn feature_views_from_names(&self, names: &[Feature]) -> Result<HashMap<Feature, FeatureView>> {
-        names
-            .iter()
-            .map(|req_feature| {
-                if self
-                    .registry
-                    .on_demand_features
-                    .contains_key(&req_feature.feature_view_name)
-                {
-                    return Err(anyhow!("OnDemand feature view for now is not supported"));
-                }
-                self.registry
-                    .feature_views
-                    .get(req_feature.feature_view_name.as_str())
-                    .map(|view| (req_feature.clone(), view.clone()))
-                    .ok_or(anyhow!(
-                        "Feature view {} not found",
-                        req_feature.feature_view_name
-                    ))
-            })
-            .collect()
+    fn feature_views_from_names(&self, names: &[Feature]) -> Result<RegistryLookupResult> {
+        let mut feature_to_view = HashMap::new();
+        for req_feature in names {
+            if self
+                .registry
+                .on_demand_features
+                .contains_key(&req_feature.feature_view_name)
+            {
+                return Err(anyhow!("OnDemand feature view for now is not supported"));
+            }
+            let view = self
+                .registry
+                .feature_views
+                .get(req_feature.feature_view_name.as_str())
+                .ok_or(anyhow!(
+                    "Feature view {} not found",
+                    req_feature.feature_view_name
+                ))?
+                .clone();
+            feature_to_view.insert(req_feature.clone(), view);
+        }
+        Ok(RegistryLookupResult {
+            feature_to_view,
+            ordered_features: names.to_vec(),
+        })
     }
 
     #[allow(dead_code)]
@@ -124,7 +130,7 @@ impl FileFeatureRegistry {
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<RegistryLookupResult> {
         match requested_features {
             RequestedFeatures::FeatureService(service_name) => {
                 self.feature_views_from_service(&service_name)
@@ -158,7 +164,7 @@ impl FeatureRegistryService for FileFeatureRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<RegistryLookupResult> {
         let requested_features = RequestedFeatures::from(request);
         self.get_feature_views(requested_features)
     }
@@ -182,7 +188,8 @@ mod tests {
             feature_name: "conv_rate".to_string(),
         }];
         let found_views = feature_registry.feature_views_from_names(&requested_features)?;
-        assert_eq!(found_views.len(), 1);
+        assert_eq!(found_views.feature_to_view.len(), 1);
+        assert_eq!(found_views.ordered_features.len(), 1);
         Ok(())
     }
 
@@ -199,7 +206,8 @@ mod tests {
         let result = feature_registry_service
             .request_to_view_keys(&request_obj)
             .await?;
-        println!("{:?}", result);
+        println!("{:?}", result.feature_to_view);
+        assert_eq!(result.ordered_features.len(), 1);
         Ok(())
     }
     #[tokio::test]
@@ -214,7 +222,8 @@ mod tests {
         let result = feature_registry_service
             .request_to_view_keys(&request_obj)
             .await?;
-        println!("{:?}", result);
+        println!("{:?}", result.feature_to_view);
+        assert!(!result.ordered_features.is_empty());
         Ok(())
     }
 }
