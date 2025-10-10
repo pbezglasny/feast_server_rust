@@ -6,10 +6,10 @@ use std::sync::{Arc, OnceLock};
 use anyhow::Result;
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{EntityId, GetOnlineFeatureRequest};
-use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use feast_server_core::onlinestore::OnlineStore;
-use feast_server_core::registry::file_registry::FileFeatureRegistry;
+use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use feast_server_core::registry::FeatureRegistryService;
+use feast_server_core::registry::file_registry::FileFeatureRegistry;
 use tokio::sync::OnceCell;
 
 fn manifest_path(relative: &str) -> String {

@@ -4,10 +4,9 @@ use crate::key_serialization::serialize_key;
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
-use std::time::{Duration, SystemTime};
 
 pub struct ConnectionOptions {
     max_connections: u32,
@@ -22,8 +21,8 @@ impl Default for ConnectionOptions {
         Self {
             max_connections: 5,
             min_connections: 1,
-            acquire_timeout: Duration::from_secs(5),
-            idle_timeout: Duration::from_secs(600),
+            acquire_timeout: Duration::seconds(5),
+            idle_timeout: Duration::seconds(600),
             test_before_acquire: true,
         }
     }
@@ -34,8 +33,8 @@ pub struct SqliteStoreRow {
     pub entity_key: Vec<u8>,
     pub feature_name: String,
     pub value: Vec<u8>,
-    pub event_ts: SystemTime,
-    pub created_ts: SystemTime,
+    pub event_ts: DateTime<Utc>,
+    pub created_ts: DateTime<Utc>,
 }
 
 impl SqliteStoreRow {
@@ -62,8 +61,8 @@ impl FromRow<'_, SqliteRow> for SqliteStoreRow {
             entity_key,
             feature_name,
             value,
-            event_ts: event_ts.into(),
-            created_ts: created_ts.into(),
+            event_ts,
+            created_ts,
         })
     }
 }
@@ -123,8 +122,18 @@ impl SqliteOnlineStore {
         let pool = SqlitePoolOptions::new()
             .max_connections(connection_options.max_connections)
             .min_connections(connection_options.min_connections)
-            .acquire_timeout(connection_options.acquire_timeout)
-            .idle_timeout(connection_options.idle_timeout)
+            .acquire_timeout(
+                connection_options
+                    .acquire_timeout
+                    .to_std()
+                    .unwrap_or_else(|_| std::time::Duration::from_secs(0)),
+            )
+            .idle_timeout(
+                connection_options
+                    .idle_timeout
+                    .to_std()
+                    .unwrap_or_else(|_| std::time::Duration::from_secs(0)),
+            )
             .test_before_acquire(connection_options.test_before_acquire)
             .connect(path)
             .await?;
@@ -138,8 +147,8 @@ impl SqliteOnlineStore {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::feast::types::value::Val;
     use crate::feast::types::Value;
+    use crate::feast::types::value::Val;
 
     #[tokio::test]
     async fn read_sqlite_trait() -> Result<()> {

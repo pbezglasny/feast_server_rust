@@ -8,12 +8,11 @@ use crate::model::{
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
-use chrono::{DateTime, SubsecRound};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone)]
-struct ResponseFeatureRow(Value, FeatureStatus, SystemTime);
+struct ResponseFeatureRow(Value, FeatureStatus, DateTime<Utc>);
 
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
@@ -73,9 +72,13 @@ impl GetOnlineFeatureResponse {
                 if value.0.val.is_none() {
                     FeatureStatus::NullValue
                 } else if let Some(feature_view) = feature_view_opt {
-                    let expiration_time = row.event_ts + feature_view.ttl;
-                    if SystemTime::now() > expiration_time {
-                        FeatureStatus::OutsideMaxAge
+                    if let Some(expiration_time) = row.event_ts.checked_add_signed(feature_view.ttl)
+                    {
+                        if Utc::now() > expiration_time {
+                            FeatureStatus::OutsideMaxAge
+                        } else {
+                            FeatureStatus::Present
+                        }
                     } else {
                         FeatureStatus::Present
                     }
@@ -127,9 +130,7 @@ impl GetOnlineFeatureResponse {
                     .collect();
                 let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
                 for entity_val in &values {
-                    let mut values = associated_values_map
-                        .remove(entity_val)
-                        .unwrap_or_default();
+                    let mut values = associated_values_map.remove(entity_val).unwrap_or_default();
                     {
                         let mut entity_result = features.entry(entity_feature.clone()).or_default();
                         entity_result
@@ -149,14 +150,12 @@ impl GetOnlineFeatureResponse {
                                 feature_result.statuses.push(FeatureStatus::NotFound);
                                 feature_result
                                     .event_timestamps
-                                    .push(DateTime::from(SystemTime::UNIX_EPOCH).round_subsecs(0));
+                                    .push(DateTime::<Utc>::UNIX_EPOCH.round_subsecs(0));
                             }
                             Some(ResponseFeatureRow(value, status, event_ts)) => {
                                 feature_result.values.push(ValueWrapper(value));
                                 feature_result.statuses.push(status);
-                                feature_result
-                                    .event_timestamps
-                                    .push(DateTime::from(event_ts));
+                                feature_result.event_timestamps.push(event_ts);
                             }
                         }
                     }
@@ -201,10 +200,9 @@ mod tests {
     use crate::feast::types::{EntityKey, Value};
     use crate::key_serialization::serialize_key;
     use anyhow::Result;
-    use chrono::{SubsecRound, Utc};
+    use chrono::{Duration, SubsecRound, Utc};
     use prost::Message;
     use std::collections::HashMap;
-    use std::time::{Duration, SystemTime};
 
     #[test]
     fn try_from_builds_response_with_missing_values() -> Result<()> {
@@ -214,7 +212,7 @@ mod tests {
             vec![EntityId::Int(1001), EntityId::Int(1002)],
         );
 
-        let event_ts = SystemTime::now();
+        let event_ts = Utc::now().round_subsecs(0);
         let feature_value = Value {
             val: Some(Val::Int64Val(42)),
         };
@@ -239,7 +237,7 @@ mod tests {
 
         let mut feature_view = FeatureView::default();
         feature_view.name = "driver_hourly_stats".to_string();
-        feature_view.ttl = Duration::from_secs(3600);
+        feature_view.ttl = Duration::seconds(3600);
         feature_view.entity_names = vec!["driver_id".to_string()];
 
         let mut feature_views = HashMap::new();
@@ -249,8 +247,7 @@ mod tests {
             GetOnlineFeatureResponse::try_from(entity_keys, vec![row], feature_views, false)?;
 
         let mut expected = GetOnlineFeatureResponse::default();
-        expected.metadata.feature_names =
-            vec!["driver_id".to_string(), "acc_rate".to_string()];
+        expected.metadata.feature_names = vec!["driver_id".to_string(), "acc_rate".to_string()];
         expected.results.push(FeatureResults {
             values: vec![
                 ValueWrapper::from(EntityId::Int(1001)),
@@ -270,8 +267,8 @@ mod tests {
             ],
             statuses: vec![FeatureStatus::Present, FeatureStatus::NotFound],
             event_timestamps: vec![
-                chrono::DateTime::<Utc>::from(event_ts),
-                chrono::DateTime::<Utc>::from(SystemTime::UNIX_EPOCH).round_subsecs(0),
+                event_ts,
+                chrono::DateTime::<Utc>::UNIX_EPOCH.round_subsecs(0),
             ],
         });
 
