@@ -139,9 +139,9 @@ async fn handle_feature_request(
     let Json(get_online_feature_request) = payload?;
 
     server
-    .feature_store
-    .get_online_features(get_online_feature_request)
-    .await
-    .map(Json)
-    .map_err(|err| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+        .feature_store
+        .get_online_features(get_online_feature_request)
+        .await
+        .map(Json)
+        .map_err(|err| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
 }

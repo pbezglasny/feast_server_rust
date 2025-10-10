@@ -1,6 +1,6 @@
-use crate::model::{FeatureView, GetOnlineFeatureRequest, Feature};
+use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
 use crate::registry::cached_registry::CachedFileRegistry;
-use crate::registry::{FileFeatureRegistry, FeatureRegistryService};
+use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use async_trait::async_trait;
 use prost::Message;
@@ -91,7 +91,7 @@ mod tests {
     use crate::model::GetOnlineFeatureRequest;
     use anyhow::Result;
     use std::sync::Arc;
-    
+
     #[tokio::test]
     #[ignore]
     async fn read_registry_from_s3() -> Result<()> {

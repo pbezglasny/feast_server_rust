@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use tokio::runtime::Runtime;
 
 #[path = "common.rs"]
@@ -34,8 +34,7 @@ fn bench_onlinestore(c: &mut Criterion) {
             let entity_keys = entity_keys.clone();
             let feature_names = feature_names.clone();
             async move {
-                let feature_refs: Vec<&str> =
-                    feature_names.iter().map(|s| s.as_str()).collect();
+                let feature_refs: Vec<&str> = feature_names.iter().map(|s| s.as_str()).collect();
                 let result = store
                     .get_feature_values("driver_hourly_stats", &entity_keys, &feature_refs)
                     .await
