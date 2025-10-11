@@ -6,6 +6,7 @@ use crate::model::{
 use crate::registry::FeatureRegistryService;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -49,7 +50,7 @@ impl FileFeatureRegistry {
     fn feature_views_from_service(
         &self,
         service_name: &str,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<IndexMap<Feature, FeatureView>> {
         let service = self
             .registry
             .feature_services
@@ -57,7 +58,7 @@ impl FileFeatureRegistry {
             // TODO use custom error type for 404 error
             .ok_or(anyhow!("Requested feature service not found"))?
             .clone();
-        let mut result = HashMap::new();
+        let mut result = IndexMap::new();
         let FeatureService {
             name,
             project,
@@ -96,7 +97,7 @@ impl FileFeatureRegistry {
         Ok(result)
     }
 
-    fn feature_views_from_names(&self, names: &[Feature]) -> Result<HashMap<Feature, FeatureView>> {
+    fn feature_views_from_names(&self, names: &[Feature]) -> Result<IndexMap<Feature, FeatureView>> {
         names
             .iter()
             .map(|req_feature| {
@@ -124,7 +125,7 @@ impl FileFeatureRegistry {
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<IndexMap<Feature, FeatureView>> {
         match requested_features {
             RequestedFeatures::FeatureService(service_name) => {
                 self.feature_views_from_service(&service_name)
@@ -158,7 +159,7 @@ impl FeatureRegistryService for FileFeatureRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<IndexMap<Feature, FeatureView>> {
         let requested_features = RequestedFeatures::from(request);
         self.get_feature_views(requested_features)
     }

@@ -7,6 +7,7 @@ use crate::model::{
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +34,7 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: HashMap<Feature, FeatureView> =
+        let feature_to_view: IndexMap<Feature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
 
         let keys_by_view: Vec<TypedFeature> =
@@ -138,7 +139,7 @@ fn entity_key_for_entity_less_feature() -> Arc<Vec<EntityKey>> {
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys(
-    feature_to_view: &HashMap<Feature, FeatureView>,
+    feature_to_view: &IndexMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
 ) -> Result<Vec<TypedFeature>> {
     let mut result = vec![];
@@ -305,7 +306,7 @@ mod tests {
             feature_view_name: "feature_view2".to_string(),
             feature_name: "col2".to_string(),
         };
-        let features = HashMap::from([(feature_1, feature_view_1), (feature_2, feature_view_2)]);
+        let features = IndexMap::from([(feature_1, feature_view_1), (feature_2, feature_view_2)]);
         let requested_entity_keys = HashMap::from([
             (
                 "entity_col_1".to_string(),
@@ -363,7 +364,7 @@ mod tests {
             feature_view_name: "feature_view1".to_string(),
             feature_name: "col1".to_string(),
         };
-        let features = HashMap::from([(feature_1, feature_view_1)]);
+        let features = IndexMap::from([(feature_1, feature_view_1)]);
         let requested_entity_keys = HashMap::from([(
             "alias_1".to_string(),
             vec![EntityId::Int(12), EntityId::Int(14), EntityId::Int(16)],
