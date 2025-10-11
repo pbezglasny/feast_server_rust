@@ -210,7 +210,12 @@ fn feature_views_to_keys(
                 .join(",");
             if !key_cache.contains_key(&cache_key) {
                 let mut entity_keys: Vec<EntityKey> = vec![];
-                for i in 0..requested_entity_keys[&lookup_keys.first().unwrap().1].len() {
+                let first_lookup_key = &lookup_keys
+                    .first()
+                    .expect("lookup_keys should not be empty")
+                    .1;
+                let num_entities = requested_entity_keys[first_lookup_key].len();
+                for i in 0..num_entities {
                     let entity_values: Result<Vec<Value>> = lookup_keys
                         .iter()
                         .map(|(_, key, value_type)| {
