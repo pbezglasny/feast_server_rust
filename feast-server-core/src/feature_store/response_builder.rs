@@ -208,11 +208,12 @@ impl GetOnlineFeatureResponse {
                 continue;
             }
             processed_features.insert(feature.clone());
-            let size = result.results.get(0).map(|r| r.values.len()).unwrap_or(1);
-            let mut feature_result = FeatureResults::default();
-            feature_result.values = vec![ValueWrapper(value); size];
-            feature_result.statuses = vec![status; size];
-            feature_result.event_timestamps = vec![DateTime::from(event_ts); size];
+            let size = result.results.first().map(|r| r.values.len()).unwrap_or(1);
+            let mut feature_result = FeatureResults {
+                values: vec![ValueWrapper(value); size],
+                statuses: vec![status; size],
+                event_timestamps: vec![event_ts; size],
+            };
             result.results.push(feature_result);
             let feature_name = if full_feature_names {
                 feature.full_name()

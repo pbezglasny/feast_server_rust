@@ -1,12 +1,12 @@
 use crate::feast::types::value::Val;
-use crate::feast::types::{value_type, EntityKey, Value};
+use crate::feast::types::{EntityKey, Value, value_type};
 use crate::model::{
-    EntityId, Feature, FeatureType, FeatureView, FeatureWithKeys,
-    GetOnlineFeatureRequest, GetOnlineFeatureResponse, TypedFeature, DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL,
+    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityId, Feature, FeatureType, FeatureView,
+    FeatureWithKeys, GetOnlineFeatureRequest, GetOnlineFeatureResponse, TypedFeature,
 };
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::registry::FeatureRegistryService;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -206,7 +206,7 @@ fn feature_views_to_keys(
                 .map(|(col, _, _)| col.clone())
                 .collect::<Vec<String>>()
                 .join(",");
-            if key_cache.get(&cache_key).is_none() {
+            if !key_cache.contains_key(&cache_key) {
                 let mut entity_keys: Vec<EntityKey> = vec![];
                 for i in 0..requested_entity_keys[&lookup_keys[0].1].len() {
                     let entity_values: Result<Vec<Value>> = lookup_keys
@@ -242,9 +242,7 @@ fn feature_views_to_keys(
 mod tests {
     use super::*;
     use crate::feast::types::{value, value_type};
-    use crate::model::{
-        EntityId, Field, GetOnlineFeatureRequest,
-    };
+    use crate::model::{EntityId, Field, GetOnlineFeatureRequest};
     use chrono::Duration;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -324,17 +322,11 @@ mod tests {
         assert_eq!(result_keys, expected_keys);
         for (key, result_values) in result.into_iter() {
             let result_arc = result_values;
-            let result_vec: Vec<EntityKeyWrapper> = result_arc
-                .iter()
-                .cloned()
-                .map(EntityKeyWrapper)
-                .collect();
+            let result_vec: Vec<EntityKeyWrapper> =
+                result_arc.iter().cloned().map(EntityKeyWrapper).collect();
             let expected_arc = expected.remove(key).unwrap();
-            let expected_vec: Vec<EntityKeyWrapper> = expected_arc
-                .iter()
-                .cloned()
-                .map(EntityKeyWrapper)
-                .collect();
+            let expected_vec: Vec<EntityKeyWrapper> =
+                expected_arc.iter().cloned().map(EntityKeyWrapper).collect();
             assert_eq!(result_vec, expected_vec);
         }
     }
@@ -438,8 +430,8 @@ mod tests {
     use crate::feature_store::feature_store_impl::FeatureStore;
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
     use crate::registry::file_registry::FileFeatureRegistry;
-    use anyhow::Result;
     use crate::util::EntityKeyWrapper;
+    use anyhow::Result;
 
     async fn get_feature_store() -> Result<FeatureStore> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
