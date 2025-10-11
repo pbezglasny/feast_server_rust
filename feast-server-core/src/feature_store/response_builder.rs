@@ -278,7 +278,7 @@ mod tests {
         feature_views.insert(feature_view.name.clone(), feature_view);
 
         let features = vec![TypedFeature {
-            feature: Feature::new("".to_string(), "acc_rate".to_string()),
+            feature: Feature::new("driver_hourly_stats".to_string(), "acc_rate".to_string()),
             feature_type: FeatureType::Plain,
         }];
 

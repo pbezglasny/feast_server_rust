@@ -173,7 +173,6 @@ fn feature_views_to_keys(
                 entity_keys: entity_key_for_entity_less_feature(),
             });
         } else {
-            let mut entity_keys: Vec<EntityKey> = vec![];
             let lookup_keys: Vec<(String, String, value_type::Enum)> = view
                 .entity_columns
                 .iter()
@@ -191,6 +190,9 @@ fn feature_views_to_keys(
                     (col.name.clone(), lookup_name.clone(), col.value_type)
                 })
                 .collect();
+            if lookup_keys.is_empty() {
+                return Err(anyhow!("Feature view {} has no entity columns", view.name));
+            }
             for (_, key, _) in lookup_keys.iter() {
                 if !requested_entity_keys.contains_key(key) {
                     return Err(anyhow!(
@@ -208,7 +210,7 @@ fn feature_views_to_keys(
                 .join(",");
             if !key_cache.contains_key(&cache_key) {
                 let mut entity_keys: Vec<EntityKey> = vec![];
-                for i in 0..requested_entity_keys[&lookup_keys[0].1].len() {
+                for i in 0..requested_entity_keys[&lookup_keys.first().unwrap().1].len() {
                     let entity_values: Result<Vec<Value>> = lookup_keys
                         .iter()
                         .map(|(_, key, value_type)| {
