@@ -10,7 +10,6 @@ use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing;
 
@@ -246,6 +245,7 @@ mod tests {
     use crate::model::{
         EntityId, Field, GetOnlineFeatureRequest,
     };
+    use chrono::Duration;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
@@ -286,7 +286,7 @@ mod tests {
         let feature_view_1 = FeatureView {
             name: "feature_view1".to_string(),
             features: vec![],
-            ttl: Duration::new(1, 1),
+            ttl: Duration::seconds(1),
             entity_names: vec!["entity_1".to_string()],
             entity_columns: vec![Field {
                 name: "entity_col_1".to_string(),
@@ -297,7 +297,7 @@ mod tests {
         let feature_view_2 = FeatureView {
             name: "feature_view2".to_string(),
             features: vec![],
-            ttl: Duration::new(1, 1),
+            ttl: Duration::seconds(1),
             entity_names: vec!["entity_1".to_string(), "entity_2".to_string()],
             entity_columns: vec![
                 Field {
@@ -312,6 +312,32 @@ mod tests {
             join_key_map: None,
         };
         vec![feature_view_1, feature_view_2]
+    }
+
+    fn assert_equal_results(
+        result: HashMap<&Feature, Arc<Vec<EntityKey>>>,
+        mut expected: HashMap<&Feature, Arc<Vec<EntityKey>>>,
+    ) {
+        let mut result_keys = result.keys().collect::<Vec<&&Feature>>();
+        let mut expected_keys = expected.keys().collect::<Vec<&&Feature>>();
+        result_keys.sort();
+        expected_keys.sort();
+        assert_eq!(result_keys, expected_keys);
+        for (key, result_values) in result.into_iter() {
+            let result_arc = result_values;
+            let result_vec: Vec<EntityKeyWrapper> = result_arc
+                .iter()
+                .cloned()
+                .map(EntityKeyWrapper)
+                .collect();
+            let expected_arc = expected.remove(key).unwrap();
+            let expected_vec: Vec<EntityKeyWrapper> = expected_arc
+                .iter()
+                .cloned()
+                .map(EntityKeyWrapper)
+                .collect();
+            assert_eq!(result_vec, expected_vec);
+        }
     }
 
     #[test]

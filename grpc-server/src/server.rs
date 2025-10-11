@@ -1,20 +1,20 @@
 use crate::proto::feast::serving::serving_service_server::{ServingService, ServingServiceServer};
 use crate::proto::feast::serving::{
-    get_online_features_request, get_online_features_response, FeatureList, GetFeastServingInfoRequest,
-    GetFeastServingInfoResponse, GetOnlineFeaturesRequest, GetOnlineFeaturesResponse,
-    GetOnlineFeaturesResponseMetadata,
+    FeatureList, GetFeastServingInfoRequest, GetFeastServingInfoResponse, GetOnlineFeaturesRequest,
+    GetOnlineFeaturesResponse, GetOnlineFeaturesResponseMetadata, get_online_features_request,
+    get_online_features_response,
 };
 use crate::proto::feast::types::{
     self as grpc_types, BoolList as GrpcBoolList, BytesList as GrpcBytesList,
     DoubleList as GrpcDoubleList, FloatList as GrpcFloatList, Int32List as GrpcInt32List,
     Int64List as GrpcInt64List, RepeatedValue as GrpcRepeatedValue, StringList as GrpcStringList,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use feast_server_core::feast::types::{
-    value::Val as CoreVal, BoolList as CoreBoolList, BytesList as CoreBytesList,
-    DoubleList as CoreDoubleList, FloatList as CoreFloatList, Int32List as CoreInt32List,
-    Int64List as CoreInt64List, StringList as CoreStringList, Value as CoreValue,
+    BoolList as CoreBoolList, BytesList as CoreBytesList, DoubleList as CoreDoubleList,
+    FloatList as CoreFloatList, Int32List as CoreInt32List, Int64List as CoreInt64List,
+    StringList as CoreStringList, Value as CoreValue, value::Val as CoreVal,
 };
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{

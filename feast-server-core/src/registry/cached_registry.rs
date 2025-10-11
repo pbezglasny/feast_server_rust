@@ -1,5 +1,5 @@
-use crate::model::{FeatureView, GetOnlineFeatureRequest, Feature};
-use crate::registry::{FileFeatureRegistry, FeatureRegistryService};
+use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
+use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;

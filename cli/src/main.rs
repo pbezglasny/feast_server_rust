@@ -35,11 +35,12 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cwd = if let Some(path) = chdir.or_else(|| std::env::var(FEATURE_REPO_DIR_ENV_VAR_NAME).ok()) {
-        PathBuf::from(path)
-    } else {
-        std::env::current_dir()?
-    };
+    let cwd =
+        if let Some(path) = chdir.or_else(|| std::env::var(FEATURE_REPO_DIR_ENV_VAR_NAME).ok()) {
+            PathBuf::from(path)
+        } else {
+            std::env::current_dir()?
+        };
     let cwd_str = cwd
         .to_str()
         .ok_or_else(|| anyhow!("Feature repository path contains invalid UTF-8"))?;

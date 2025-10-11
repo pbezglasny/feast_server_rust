@@ -7,12 +7,12 @@ use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{EntityKey, Value, value_type};
-use crate::util::prost_duration_to_std;
-use crate::util::prost_timestamp_to_system_time;
+use crate::feast::types::{Value, value_type};
+use crate::util::prost_duration_to_duration;
+use crate::util::prost_timestamp_to_datetime;
 use anyhow::Result;
 use anyhow::{Error, anyhow};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use prost::Message;
 use serde::ser::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -20,11 +20,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
-use std::string::ToString;
-use std::sync::Arc;
-use std::time::Duration;
-
-use std::time::SystemTime;
 
 pub(crate) const DUMMY_ENTITY_ID: &str = "__dummy_id";
 pub(crate) const DUMMY_ENTITY_NAME: &str = "__dummy";
@@ -191,7 +186,7 @@ pub struct FeatureProjection {
     pub join_key_map: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FeatureView {
     pub name: String,
     pub features: Vec<Field>,
@@ -199,6 +194,19 @@ pub struct FeatureView {
     pub entity_names: Vec<String>,
     pub entity_columns: Vec<Field>,
     pub join_key_map: Option<HashMap<String, String>>,
+}
+
+impl Default for FeatureView {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            features: Vec::new(),
+            ttl: Duration::zero(),
+            entity_names: Vec::new(),
+            entity_columns: Vec::new(),
+            join_key_map: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -216,8 +224,8 @@ pub struct LoggingConfig {
 pub struct FeatureService {
     pub name: String,
     pub project: String,
-    pub created_timestamp: Option<SystemTime>,
-    pub last_updated_timestamp: Option<SystemTime>,
+    pub created_timestamp: Option<DateTime<Utc>>,
+    pub last_updated_timestamp: Option<DateTime<Utc>>,
     pub projections: Vec<FeatureProjection>,
     pub logging_config: Option<LoggingConfig>,
 }
@@ -423,8 +431,8 @@ impl TryFrom<FeatureViewProto> for FeatureView {
             ttl: spec
                 .ttl
                 .as_ref()
-                .map(prost_duration_to_std)
-                .unwrap_or(Duration::from_secs(0)),
+                .map(prost_duration_to_duration)
+                .unwrap_or_else(Duration::zero),
             entity_names: spec.entities,
             entity_columns: spec
                 .entity_columns
@@ -471,10 +479,10 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
             project: spec.project,
             created_timestamp: metadata
                 .created_timestamp
-                .map(|ts| prost_timestamp_to_system_time(&ts)),
+                .map(|ts| prost_timestamp_to_datetime(&ts)),
             last_updated_timestamp: metadata
                 .last_updated_timestamp
-                .map(|ts| prost_timestamp_to_system_time(&ts)),
+                .map(|ts| prost_timestamp_to_datetime(&ts)),
             projections: projections?,
             logging_config: None,
         })
