@@ -1,12 +1,12 @@
 use crate::feast::types::value::Val;
-use crate::feast::types::{EntityKey, Value, value_type};
+use crate::feast::types::{value_type, EntityKey, Value};
 use crate::model::{
-    EntityId, Feature, FeatureType, FeatureView, GetOnlineFeatureRequest, GetOnlineFeatureResponse,
-    TypedFeature,
+    EntityId, Feature, FeatureType, FeatureView, FeatureWithKeys,
+    GetOnlineFeatureRequest, GetOnlineFeatureResponse, TypedFeature, DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL,
 };
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::registry::FeatureRegistryService;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,7 +37,7 @@ impl FeatureStore {
         let feature_to_view: IndexMap<Feature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
 
-        let keys_by_view: Vec<TypedFeature> =
+        let features_with_keys: Vec<FeatureWithKeys> =
             feature_views_to_keys(&feature_to_view, &request.entities)?;
 
         // feature view name to requested entity keys values
@@ -48,14 +48,35 @@ impl FeatureStore {
         // feature view name to feature view
         let mut view_name_to_view: HashMap<String, FeatureView> = HashMap::new();
 
-        for (typed_feature) in keys_by_view.into_iter() {
-            view_to_keys.insert(
-                typed_feature.feature.feature_view_name.clone(),
-                Arc::clone(&typed_feature.entity_keys),
-            );
+        let mut feature_list = vec![];
+
+        for (feature) in features_with_keys.into_iter() {
+            if view_to_keys.contains_key(&feature.feature.feature_view_name) {
+                let existing_keys = view_to_keys
+                    .get(&feature.feature.feature_view_name)
+                    .unwrap();
+                let merged_keys = {
+                    let mut combined =
+                        Vec::with_capacity(existing_keys.len() + feature.entity_keys.len());
+                    combined.extend(existing_keys.iter().cloned());
+                    combined.extend(feature.entity_keys.iter().cloned());
+                    combined
+                };
+                view_to_keys.insert(
+                    feature.feature.feature_view_name.clone(),
+                    Arc::new(merged_keys),
+                );
+            } else {
+                view_to_keys.insert(
+                    feature.feature.feature_view_name.clone(),
+                    Arc::clone(&feature.entity_keys),
+                );
+            }
             view_features
-                .entry(typed_feature.feature.feature_view_name.clone())
+                .entry(feature.feature.feature_view_name.clone())
                 .or_default();
+
+            feature_list.push(TypedFeature::from(feature));
         }
 
         for (requested_feature, fv) in feature_to_view.into_iter() {
@@ -107,6 +128,7 @@ impl FeatureStore {
             request.entities,
             clean_data,
             view_name_to_view,
+            feature_list,
             request.full_feature_names.unwrap_or(false),
         )
     }
@@ -129,9 +151,9 @@ impl EntityColumnRef {
 
 fn entity_key_for_entity_less_feature() -> Arc<Vec<EntityKey>> {
     Arc::new(vec![EntityKey {
-        join_keys: vec![crate::model::DUMMY_ENTITY_NAME.to_string()],
+        join_keys: vec![DUMMY_ENTITY_ID.to_string()],
         entity_values: vec![Value {
-            val: Some(Val::StringVal(crate::model::DUMMY_ENTITY_VAL.to_string())),
+            val: Some(Val::StringVal(DUMMY_ENTITY_VAL.to_string())),
         }],
     }])
 }
@@ -141,12 +163,12 @@ fn entity_key_for_entity_less_feature() -> Arc<Vec<EntityKey>> {
 fn feature_views_to_keys(
     feature_to_view: &IndexMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
-) -> Result<Vec<TypedFeature>> {
+) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
     let mut key_cache: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
-            result.push(TypedFeature {
+            result.push(FeatureWithKeys {
                 feature: feature.clone(),
                 feature_type: FeatureType::EntityLess,
                 entity_keys: entity_key_for_entity_less_feature(),
@@ -185,14 +207,14 @@ fn feature_views_to_keys(
                 .map(|(col, _, _)| col.clone())
                 .collect::<Vec<String>>()
                 .join(",");
-            if let None = key_cache.get(&cache_key) {
+            if key_cache.get(&cache_key).is_none() {
                 let mut entity_keys: Vec<EntityKey> = vec![];
                 for i in 0..requested_entity_keys[&lookup_keys[0].1].len() {
                     let entity_values: Result<Vec<Value>> = lookup_keys
                         .iter()
                         .map(|(_, key, value_type)| {
                             let values = &requested_entity_keys[key];
-                            values[i].clone().to_proto_value(value_type.clone())
+                            values[i].clone().to_proto_value(*value_type)
                         })
                         .collect();
                     let entity_key = EntityKey {
@@ -207,7 +229,7 @@ fn feature_views_to_keys(
                 key_cache.insert(cache_key.clone(), Arc::new(entity_keys));
             }
             let entity_keys = key_cache.get(&cache_key).unwrap().clone();
-            result.push(TypedFeature {
+            result.push(FeatureWithKeys {
                 feature: feature.clone(),
                 feature_type: FeatureType::Plain,
                 entity_keys,
@@ -222,7 +244,7 @@ mod tests {
     use super::*;
     use crate::feast::types::{value, value_type};
     use crate::model::{
-        EntityId, Field, GetOnlineFeatureRequest, GetOnlineFeatureResponseMetadata,
+        EntityId, Field, GetOnlineFeatureRequest,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -335,12 +357,12 @@ mod tests {
         );
 
         let expected = vec![
-            TypedFeature {
+            FeatureWithKeys {
                 feature: feature_1,
                 feature_type: FeatureType::Plain,
                 entity_keys: Arc::new(entity_values_1),
             },
-            TypedFeature {
+            FeatureWithKeys {
                 feature: feature_2,
                 feature_type: FeatureType::Plain,
                 entity_keys: Arc::new(entity_values_2),
@@ -378,7 +400,7 @@ mod tests {
 
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
 
-        let expected = vec![TypedFeature {
+        let expected = vec![FeatureWithKeys {
             feature: feature_1,
             feature_type: FeatureType::Plain,
             entity_keys: Arc::new(entity_values_1),
@@ -391,7 +413,6 @@ mod tests {
     use crate::feature_store::feature_store_impl::FeatureStore;
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
     use crate::registry::file_registry::FileFeatureRegistry;
-    use crate::util::EntityKeyWrapper;
     use anyhow::Result;
 
     async fn get_feature_store() -> Result<FeatureStore> {

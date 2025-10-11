@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use std::time::SystemTime;
 
-const DUMMY_ENTITY_ID: &str = "__dummy_id";
+pub(crate) const DUMMY_ENTITY_ID: &str = "__dummy_id";
 pub(crate) const DUMMY_ENTITY_NAME: &str = "__dummy";
 pub(crate) const DUMMY_ENTITY_VAL: &str = "";
 pub(crate) const DUMMY_ENTITY_VALUE_TYPE: ValueTypeEnum = ValueTypeEnum::String;
@@ -249,10 +249,25 @@ pub enum FeatureType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypedFeature {
+pub struct FeatureWithKeys {
     pub feature: Feature,
     pub feature_type: FeatureType,
     pub entity_keys: Arc<Vec<EntityKey>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedFeature {
+    pub feature: Feature,
+    pub feature_type: FeatureType,
+}
+
+impl From<FeatureWithKeys> for TypedFeature {
+    fn from(fk: FeatureWithKeys) -> Self {
+        Self {
+            feature: fk.feature,
+            feature_type: fk.feature_type,
+        }
+    }
 }
 
 impl Feature {
