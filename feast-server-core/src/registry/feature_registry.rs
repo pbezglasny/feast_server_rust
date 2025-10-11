@@ -29,7 +29,7 @@ pub async fn get_registry(
                 let mut path_buf = PathBuf::new();
                 path_buf.push(path_prefix);
                 path_buf.push(conf.path.as_str());
-                let path = path_buf.clone().into_os_string().into_string().unwrap();
+                let path = path_buf.into_os_string().into_string().unwrap();
                 if let Some(ttl) = conf.cache_ttl_seconds {
                     let producer_fn = {
                         move || {
