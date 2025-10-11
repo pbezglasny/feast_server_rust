@@ -1,4 +1,5 @@
 use crate::feast::types::value::Val;
+use crate::feast::types::value_type;
 use crate::model::EntityId;
 use anyhow::{Error, Result, anyhow};
 use std::any::Any;

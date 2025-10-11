@@ -7,7 +7,7 @@ use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{Value, value_type};
+use crate::feast::types::{EntityKey, Value, value_type};
 use crate::util::prost_duration_to_std;
 use crate::util::prost_timestamp_to_system_time;
 use anyhow::Result;
@@ -20,9 +20,16 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
+use std::string::ToString;
+use std::sync::Arc;
 use std::time::Duration;
 
 use std::time::SystemTime;
+
+const DUMMY_ENTITY_ID: &str = "__dummy_id";
+pub(crate) const DUMMY_ENTITY_NAME: &str = "__dummy";
+pub(crate) const DUMMY_ENTITY_VAL: &str = "";
+pub(crate) const DUMMY_ENTITY_VALUE_TYPE: ValueTypeEnum = ValueTypeEnum::String;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -235,6 +242,19 @@ pub struct Feature {
     pub feature_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum FeatureType {
+    Plain,
+    EntityLess,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedFeature {
+    pub feature: Feature,
+    pub feature_type: FeatureType,
+    pub entity_keys: Arc<Vec<EntityKey>>,
+}
+
 impl Feature {
     pub fn new(feature_view_name: String, feature_name: String) -> Self {
         Self {
@@ -366,6 +386,12 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
             features: features?,
             join_key_map: projection_proto.join_key_map,
         })
+    }
+}
+
+impl FeatureView {
+    pub fn is_entity_less(&self) -> bool {
+        self.entity_names.len() == 1 && self.entity_names[0] == DUMMY_ENTITY_NAME
     }
 }
 
