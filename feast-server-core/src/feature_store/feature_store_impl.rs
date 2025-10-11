@@ -248,7 +248,6 @@ mod tests {
     use chrono::Duration;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use std::time::Duration;
 
     trait ToValue {
         fn to_values(&self) -> Vec<Value>;
@@ -440,6 +439,7 @@ mod tests {
     use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
     use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
+    use crate::util::EntityKeyWrapper;
 
     async fn get_feature_store() -> Result<FeatureStore> {
         let project_dir = env!("CARGO_MANIFEST_DIR");

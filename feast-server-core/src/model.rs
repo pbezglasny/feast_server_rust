@@ -7,7 +7,7 @@ use crate::feast::core::OnDemandFeatureView as OnDemandFeatureViewProto;
 use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
-use crate::feast::types::{Value, value_type};
+use crate::feast::types::{EntityKey, Value, value_type};
 use crate::util::prost_duration_to_duration;
 use crate::util::prost_timestamp_to_datetime;
 use anyhow::Result;
@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 pub(crate) const DUMMY_ENTITY_ID: &str = "__dummy_id";
 pub(crate) const DUMMY_ENTITY_NAME: &str = "__dummy";
