@@ -3,8 +3,8 @@ use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value};
 use crate::key_serialization::deserialize_key;
 use crate::model::{
-    EntityId, Feature, FeatureResults, FeatureStatus, FeatureView, GetOnlineFeatureResponse,
-    ValueWrapper,
+    EntityId, Feature, FeatureResults, FeatureStatus, FeatureType, FeatureView,
+    GetOnlineFeatureResponse, TypedFeature, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Error, Result, anyhow};
@@ -22,11 +22,13 @@ impl GetOnlineFeatureResponse {
     /// `entity_keys` - passed by user entity key for requested features
     /// `rows` - data return by onlinestore
     /// `feature_views` - mapping feature_view name to its declaration
+    /// `typed_features` - list of requested features with types
     /// `full_feature_names` - use full feature names in result object
     pub fn try_from(
         entity_keys: HashMap<String, Vec<EntityId>>,
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<String, FeatureView>,
+        feature_list: Vec<TypedFeature>,
         full_feature_names: bool,
     ) -> Result<Self> {
         // feature name to mapping where key is entity id value from request and values are
@@ -38,6 +40,16 @@ impl GetOnlineFeatureResponse {
 
         // entity key name to set of features from views where this entity is used
         let mut entity_to_features: HashMap<String, HashSet<Feature>> = HashMap::new();
+
+        let mut entity_less_features: Vec<(Feature, ResponseFeatureRow)> = vec![];
+        let entity_less_features_set: HashSet<Feature> = feature_list
+            .iter()
+            .filter(|f| f.feature_type == FeatureType::EntityLess)
+            .map(|f| Feature {
+                feature_view_name: f.feature.feature_view_name.clone(),
+                feature_name: f.feature.feature_name.clone(),
+            })
+            .collect();
 
         for row in rows.into_iter() {
             let EntityKey {
@@ -86,10 +98,13 @@ impl GetOnlineFeatureResponse {
                     FeatureStatus::Present
                 }
             };
-            entry_values.insert(
-                Feature::new(row.feature_view_name.clone(), row.feature_name.clone()),
-                ResponseFeatureRow(value.0, status, row.event_ts),
-            );
+            let feature = Feature::new(row.feature_view_name.clone(), row.feature_name.clone());
+            if entity_less_features_set.contains(&feature) {
+                entity_less_features
+                    .push((feature, ResponseFeatureRow(value.0, status, row.event_ts)));
+                continue;
+            }
+            entry_values.insert(feature, ResponseFeatureRow(value.0, status, row.event_ts));
         }
 
         let mut alias_to_original_map: HashMap<String, Vec<String>> = feature_views
@@ -188,6 +203,25 @@ impl GetOnlineFeatureResponse {
                 }
             }
         }
+        for (feature, ResponseFeatureRow(value, status, event_ts)) in entity_less_features {
+            if processed_features.contains(&feature) {
+                continue;
+            }
+            processed_features.insert(feature.clone());
+            let size = result.results.first().map(|r| r.values.len()).unwrap_or(1);
+            let mut feature_result = FeatureResults {
+                values: vec![ValueWrapper(value); size],
+                statuses: vec![status; size],
+                event_timestamps: vec![event_ts; size],
+            };
+            result.results.push(feature_result);
+            let feature_name = if full_feature_names {
+                feature.full_name()
+            } else {
+                feature.feature_name.clone()
+            };
+            result.metadata.feature_names.push(feature_name);
+        }
         Ok(result)
     }
 }
@@ -243,8 +277,18 @@ mod tests {
         let mut feature_views = HashMap::new();
         feature_views.insert(feature_view.name.clone(), feature_view);
 
-        let response =
-            GetOnlineFeatureResponse::try_from(entity_keys, vec![row], feature_views, false)?;
+        let features = vec![TypedFeature {
+            feature: Feature::new("driver_hourly_stats".to_string(), "acc_rate".to_string()),
+            feature_type: FeatureType::Plain,
+        }];
+
+        let response = GetOnlineFeatureResponse::try_from(
+            entity_keys,
+            vec![row],
+            feature_views,
+            features,
+            false,
+        )?;
 
         let mut expected = GetOnlineFeatureResponse::default();
         expected.metadata.feature_names = vec!["driver_id".to_string(), "acc_rate".to_string()];

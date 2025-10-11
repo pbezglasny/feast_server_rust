@@ -5,6 +5,7 @@ use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+use indexmap::IndexMap;
 
 pub struct CachedFileRegistry {
     inner: ArcSwap<Box<dyn FeatureRegistryService>>,
@@ -54,7 +55,7 @@ impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<IndexMap<Feature, FeatureView>> {
         let registry = self.inner.load();
         registry.request_to_view_keys(request).await
     }

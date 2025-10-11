@@ -3,6 +3,7 @@ use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use prost::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,31 +34,6 @@ impl S3Registry {
         Ok(Self { registry })
     }
 
-    /*    pub async fn new_cached(bucket_url: String, ttl: u64) -> Result<Self> {
-        let (bucket, key) = parse_s3_url(&bucket_url)?;
-        let config = aws_config::load_from_env().await;
-        let client = Arc::new(aws_sdk_s3::Client::new(&config));
-        let registry = S3Registry::from_s3(client.clone(), &bucket, &key).await?;
-        let producer_fn = {
-            let client = client.clone();
-            move || {
-                let bucket = bucket.clone();
-                let key = key.clone();
-                let client = client.clone();
-                async move { S3Registry::from_s3((client).clone(), &bucket, &key).await }
-            }
-        };
-        let cached_registry =
-            CachedFileRegistry::create_cached_registry_and_start_background_thread(
-                producer_fn,
-                ttl,
-            )
-            .await;
-        Ok(Self {
-            registry: Arc::new(FeatureRegistry::CachedRegistry(cached_registry)),
-        })
-    }*/
-
     async fn from_s3(
         s3_client: Arc<aws_sdk_s3::Client>,
         bucket: &str,
@@ -80,7 +56,7 @@ impl FeatureRegistryService for S3Registry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<IndexMap<Feature, FeatureView>> {
         self.registry.request_to_view_keys(request).await
     }
 }
