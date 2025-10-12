@@ -47,16 +47,18 @@ impl Display for FeastCoreError {
             }
             Self::FeatureViewNotFound {
                 feature_view_name,
-                service_name: Some(service_name),
-            } => write!(
-                f,
-                "Feature view '{}' not found for service '{}'",
-                feature_view_name, service_name
-            ),
-            Self::FeatureViewNotFound {
-                feature_view_name,
-                service_name: None,
-            } => write!(f, "Feature view '{}' not found", feature_view_name),
+                service_name,
+            } => {
+                if let Some(service_name) = service_name {
+                    write!(
+                        f,
+                        "Feature view '{}' not found for service '{}'",
+                        feature_view_name, service_name
+                    )
+                } else {
+                    write!(f, "Feature view '{}' not found", feature_view_name)
+                }
+            }
         }
     }
 }
