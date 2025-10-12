@@ -1,3 +1,4 @@
+use crate::error::FeastCoreError;
 use crate::feast::core::Registry;
 use crate::model::{
     Feature, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest,
@@ -55,9 +56,8 @@ impl FileFeatureRegistry {
             .registry
             .feature_services
             .get(service_name)
-            // TODO use custom error type for 404 error
-            .ok_or(anyhow!("Requested feature service not found"))?
-            .clone();
+            .cloned()
+            .ok_or_else(|| FeastCoreError::feature_service_not_found(service_name))?;
         let mut result = IndexMap::new();
         let FeatureService {
             name,
@@ -79,12 +79,13 @@ impl FileFeatureRegistry {
                 .registry
                 .feature_views
                 .get(projection.feature_view_name.as_str())
-                .ok_or(anyhow!(
-                    "Feature view {} not found for service {}",
-                    projection.feature_view_name,
-                    service_name
-                ))?
-                .clone();
+                .cloned()
+                .ok_or_else(|| {
+                    FeastCoreError::feature_view_not_found_for_service(
+                        projection.feature_view_name.clone(),
+                        service_name.to_string(),
+                    )
+                })?;
             feature_view.join_key_map = Some(projection.join_key_map);
             for feature_name in projection.features {
                 let req_feature = Feature {
@@ -103,7 +104,7 @@ impl FileFeatureRegistry {
     ) -> Result<IndexMap<Feature, FeatureView>> {
         names
             .iter()
-            .map(|req_feature| {
+            .map(|req_feature| -> Result<(Feature, FeatureView)> {
                 if self
                     .registry
                     .on_demand_features
@@ -111,14 +112,17 @@ impl FileFeatureRegistry {
                 {
                     return Err(anyhow!("OnDemand feature view for now is not supported"));
                 }
-                self.registry
+                let view = self
+                    .registry
                     .feature_views
                     .get(req_feature.feature_view_name.as_str())
-                    .map(|view| (req_feature.clone(), view.clone()))
-                    .ok_or(anyhow!(
-                        "Feature view {} not found",
-                        req_feature.feature_view_name
-                    ))
+                    .cloned()
+                    .ok_or_else(|| {
+                        FeastCoreError::feature_view_not_found(
+                            req_feature.feature_view_name.clone(),
+                        )
+                    })?;
+                Ok((req_feature.clone(), view))
             })
             .collect()
     }
