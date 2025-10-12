@@ -8,6 +8,7 @@ use axum::{
 };
 use axum_prometheus::PrometheusMetricLayer;
 use axum_server::tls_rustls::RustlsConfig;
+use feast_server_core::error::FeastCoreError;
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::GetOnlineFeatureRequest;
 use serde::Serialize;
@@ -143,5 +144,12 @@ async fn handle_feature_request(
         .get_online_features(get_online_feature_request)
         .await
         .map(Json)
-        .map_err(|err| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+        .map_err(|err| {
+            if let Some(feast_error) = err.downcast_ref::<FeastCoreError>() {
+                if feast_error.is_not_found() {
+                    return AppError::new(StatusCode::NOT_FOUND, feast_error.to_string());
+                }
+            }
+            AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+        })
 }
