@@ -146,14 +146,8 @@ async fn handle_feature_request(
         .map(Json)
         .map_err(|err| {
             if let Some(feast_error) = err.downcast_ref::<FeastCoreError>() {
-                match feast_error {
-                    FeastCoreError::FeatureServiceNotFound { .. }
-                    | FeastCoreError::FeatureViewNotFound { .. } => {
-                        return AppError::new(
-                            StatusCode::NOT_FOUND,
-                            feast_error.to_string(),
-                        );
-                    }
+                if feast_error.is_not_found() {
+                    return AppError::new(StatusCode::NOT_FOUND, feast_error.to_string());
                 }
             }
             AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
