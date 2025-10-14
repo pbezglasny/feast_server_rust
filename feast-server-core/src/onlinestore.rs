@@ -2,10 +2,12 @@ pub mod sqlite_onlinestore;
 
 use crate::config::OnlineStoreConfig;
 use crate::feast::types::EntityKey;
+use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -19,12 +21,10 @@ pub struct OnlineStoreRow {
 }
 
 #[async_trait]
-pub trait OnlineStore: Send + Sync {
+pub trait OnlineStore: Send + Sync + 'static {
     async fn get_feature_values(
         &self,
-        feature_view: &str,
-        keys: &[EntityKey],
-        requested_feature_names: &[&str],
+        features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>>;
 }
 

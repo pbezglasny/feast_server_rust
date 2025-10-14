@@ -25,7 +25,8 @@ aws-sdk-s3 = { version = "1.106.0" }
 url = "2.5.7"
 # Online store dependencies
 sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
-redis = { version = "0.32.6", features = ["default", "tokio-comp", "safe_iterators"] }
+redis = { version = "0.32.6", features = ["default", "tokio-comp", "safe_iterators", "connection-manager"] }
+murmur3 = { version = "0.5.2" }
 futures = "0.3.31"
 
 [dev-dependencies]

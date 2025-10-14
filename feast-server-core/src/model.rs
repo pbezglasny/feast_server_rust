@@ -245,6 +245,73 @@ pub enum RequestedFeatures {
     FeatureService(String),
 }
 
+struct HashValue<'a>(&'a Value);
+
+impl<'a> Hash for HashValue<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match &self.0.val {
+            None => {
+                0u8.hash(state);
+            }
+            Some(v) => match v {
+                Val::Int32Val(i) => {
+                    1u8.hash(state);
+                    i.hash(state);
+                }
+                Val::Int64Val(i) => {
+                    2u8.hash(state);
+                    i.hash(state);
+                }
+                Val::FloatVal(f) => {
+                    3u8.hash(state);
+                    // Hash the bits of the float to avoid issues with NaN and -0.0
+                    f.to_bits().hash(state);
+                }
+                Val::DoubleVal(d) => {
+                    4u8.hash(state);
+                    d.to_bits().hash(state);
+                }
+                Val::StringVal(s) => {
+                    5u8.hash(state);
+                    s.hash(state);
+                }
+                Val::BytesVal(b) => {
+                    6u8.hash(state);
+                    b.hash(state);
+                }
+                Val::BoolVal(b) => {
+                    7u8.hash(state);
+                    b.hash(state);
+                }
+                Val::UnixTimestampVal(ts) => {
+                    8u8.hash(state);
+                    ts.hash(state);
+                }
+                other => {
+                    // For unsupported types, we can choose to panic or handle it differently.
+                    panic!("Unsupported value variant for hashing: {:?}", other);
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HashEntityKey(pub EntityKey);
+
+impl Hash for HashEntityKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for join_key in &self.0.join_keys {
+            join_key.hash(state);
+        }
+        for entity_value in &self.0.entity_values {
+            HashValue(entity_value).hash(state);
+        }
+    }
+}
+
+impl Eq for HashEntityKey {}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Feature {
     pub feature_view_name: String,
