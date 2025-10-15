@@ -10,7 +10,7 @@ use crate::feast::types::value_type::Enum as ValueTypeEnum;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::util::prost_duration_to_duration;
 use crate::util::prost_timestamp_to_datetime;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use anyhow::{Error, anyhow};
 use chrono::{DateTime, Duration, Utc};
 use prost::Message;
@@ -84,7 +84,7 @@ pub struct ValueWrapper(pub Value);
 
 impl ValueWrapper {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let val = Value::decode(bytes)?;
+        let val = Value::decode(bytes).with_context(|| "Failed to decode value from online-store row")?;
         Ok(Self(val))
     }
 }

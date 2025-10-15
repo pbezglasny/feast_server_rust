@@ -7,7 +7,7 @@ use crate::model::{
     GetOnlineFeatureResponse, TypedFeature, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
-use anyhow::{Error, Result, anyhow};
+use anyhow::{Context, Error, Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
 
@@ -78,7 +78,12 @@ impl GetOnlineFeatureResponse {
                 ));
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
-            let value = ValueWrapper::from_bytes(&row.value)?;
+            let value = ValueWrapper::from_bytes(&row.value).with_context(|| {
+                format!(
+                    "Failed to decode value feature {}:{}",
+                    row.feature_view_name, row.feature_name
+                )
+            })?;
             let feature_view_opt = feature_views.get(&row.feature_view_name);
             let status: FeatureStatus = {
                 if value.0.val.is_none() {
@@ -266,7 +271,7 @@ mod tests {
             feature_name: "acc_rate".to_string(),
             value: feature_value.encode_to_vec(),
             event_ts,
-            created_ts: event_ts,
+            created_ts: None,
         };
 
         let mut feature_view = FeatureView::default();
@@ -319,4 +324,13 @@ mod tests {
         assert_eq!(response, expected);
         Ok(())
     }
+
+    #[test]
+    fn decode_test(){
+        let bytes = vec![8, 128, 218, 234, 198, 6];
+        let value = ValueWrapper::from_bytes(&bytes).unwrap();
+        println!("{:?}", value);
+    }
 }
+
+// u8 [8, 128,218, 234,198,6]

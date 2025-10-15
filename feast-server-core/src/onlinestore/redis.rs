@@ -1,0 +1,238 @@
+use crate::config::OnlineStoreConfig;
+use crate::model::{Feature, HashEntityKey};
+use crate::onlinestore::{OnlineStore, OnlineStoreRow};
+use anyhow::{Result, anyhow};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use prost::Message;
+use prost::bytes::BufMut;
+use prost_types::Timestamp;
+use redis::aio::ConnectionManager;
+use redis::{AsyncCommands, ErrorKind, FromRedisValue, RedisResult, Value};
+use std::collections::{HashMap, HashSet};
+
+fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
+    let mut key_bytes = feature.feature_view_name.as_bytes().to_vec();
+    key_bytes.push(b':');
+    key_bytes.extend_from_slice(feature.feature_name.as_bytes());
+    let hashed_key = murmur3::murmur3_32(&mut std::io::Cursor::new(&key_bytes), 0)?;
+    Ok(hashed_key.to_le_bytes().to_vec())
+}
+
+pub struct RedisOnlineStore {
+    project: String,
+    connection_pool: ConnectionManager,
+}
+
+impl RedisOnlineStore {
+    async fn new(project: String, connection_pool: ConnectionManager) -> Result<Self> {
+        Ok(Self {
+            project,
+            connection_pool,
+        })
+    }
+
+    pub async fn from_config(project: String, config: OnlineStoreConfig) -> Result<Self> {
+        match config {
+            OnlineStoreConfig::Redis { connection_string } => {
+                let connection_pool = ConnectionManager::new(
+                    redis::Client::open(connection_string.as_str())
+                        .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
+                )
+                .await?;
+                Ok(Self {
+                    project,
+                    connection_pool,
+                })
+            }
+            _ => Err(anyhow!("Invalid config for RedisOnlineStore")),
+        }
+    }
+
+    pub async fn from_connection_string(
+        project: String,
+        connection_string: String,
+    ) -> Result<Self> {
+        let connection_pool = ConnectionManager::new(
+            redis::Client::open(connection_string.as_str())
+                .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
+        )
+        .await?;
+        Ok(Self {
+            project,
+            connection_pool,
+        })
+    }
+}
+
+struct RedisDatetime(DateTime<Utc>);
+
+impl FromRedisValue for RedisDatetime {
+    fn from_redis_value(v: &Value) -> RedisResult<Self> {
+        match v {
+            Value::Int(ts) => {
+                let datetime = DateTime::from_timestamp(*ts, 0).ok_or_else(|| {
+                    redis::RedisError::from((ErrorKind::TypeError, "Invalid timestamp"))
+                })?;
+                Ok(RedisDatetime(datetime))
+            }
+            _ => Err(redis::RedisError::from((
+                ErrorKind::TypeError,
+                "Invalid value",
+            ))),
+        }
+    }
+}
+
+enum RedisRequest<'a> {
+    FeatureRow {
+        feature_view_name: &'a str,
+        entity_key: Vec<u8>,
+        feature_name: &'a str,
+    },
+    TimestampRow {
+        entity_key: Vec<u8>,
+        feature_view_name: &'a str,
+    },
+}
+
+#[async_trait]
+impl OnlineStore for RedisOnlineStore {
+    async fn get_feature_values(
+        &self,
+        mut features: HashMap<HashEntityKey, Vec<Feature>>,
+    ) -> Result<Vec<OnlineStoreRow>> {
+        let serialized_project = self.project.as_bytes().to_vec();
+
+        let mut entities: Vec<RedisRequest> = vec![];
+
+        let mut pipeline = redis::pipe();
+
+        for (key, feature_vec) in features.iter() {
+            let mut seen_views: HashSet<&str> = HashSet::new();
+            let mut feature_keys: Vec<Vec<u8>> = vec![];
+            let mut view_keys: Vec<Vec<u8>> = vec![];
+            let mut hset_entity_key = crate::key_serialization::serialize_key(
+                &key.0,
+                crate::config::EntityKeySerializationVersion::V3,
+            )?;
+            hset_entity_key.append(&mut self.project.clone().as_bytes().to_vec());
+            for feature in feature_vec {
+                feature_keys.push(feature_redis_key(&feature)?);
+                if !seen_views.contains(&feature.feature_view_name.as_ref()) {
+                    seen_views.insert(feature.feature_view_name.as_ref());
+                    view_keys.push(
+                        ["_ts:", feature.feature_view_name.as_ref()]
+                            .concat()
+                            .as_bytes()
+                            .to_vec(),
+                    );
+                    entities.push(RedisRequest::TimestampRow {
+                        entity_key: hset_entity_key.clone(),
+                        feature_view_name: &feature.feature_view_name,
+                    });
+                }
+                entities.push(RedisRequest::FeatureRow {
+                    feature_view_name: &feature.feature_view_name,
+                    entity_key: hset_entity_key.clone(),
+                    feature_name: &feature.feature_name,
+                });
+            }
+
+            pipeline
+                .cmd("HMGET")
+                .arg(hset_entity_key)
+                .arg(feature_keys)
+                .arg(view_keys);
+        }
+
+        let connection = &mut self.connection_pool.clone();
+
+        let results: Vec<Vec<Option<Vec<u8>>>> = pipeline.query_async(connection).await?;
+        let result_count = if results.is_empty() {
+            0
+        } else {
+            results.len() * results[0].len()
+        };
+        if result_count != entities.len() {
+            return Err(anyhow!(
+                "Mismatched number of results: expected {}, got {}",
+                entities.len(),
+                results.len()
+            ));
+        }
+        let mut result_rows: Vec<OnlineStoreRow> = vec![];
+        let mut timestamp_map: HashMap<(&str, Vec<u8>), Option<DateTime<Utc>>> = HashMap::new();
+        for (request, value) in entities.into_iter().zip(results.into_iter().flatten()) {
+            match request {
+                RedisRequest::FeatureRow {
+                    feature_view_name,
+                    entity_key,
+                    feature_name,
+                } => {
+                    let ts = timestamp_map
+                        .get(&(feature_view_name, entity_key.clone()))
+                        .cloned()
+                        .flatten()
+                        // .ok_or_else(|| {
+                        //     anyhow!("Missing timestamp for feature view {}", feature_view_name)
+                        // })?;
+                        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
+                    let bytes = value.unwrap_or_default();
+                    result_rows.push(OnlineStoreRow {
+                        feature_view_name: feature_view_name.to_string(),
+                        entity_key: entity_key.clone(),
+                        feature_name: feature_name.to_string(),
+                        value: bytes,
+                        event_ts: ts,
+                        created_ts: None,
+                    });
+                }
+                RedisRequest::TimestampRow {
+                    entity_key,
+                    feature_view_name,
+                } => {
+                    let ts = value
+                        .map(|bytes| Timestamp::decode(bytes.as_slice()))
+                        .filter(|res| res.is_ok())
+                        .and_then(|ts| DateTime::<Utc>::from_timestamp(ts.unwrap().seconds, 0));
+                    timestamp_map.insert((feature_view_name, entity_key), ts);
+                }
+            }
+        }
+
+        Ok(result_rows)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use crate::feast::types::value::Val;
+    use crate::feast::types::{EntityKey, Value};
+    use crate::model::{Feature, HashEntityKey};
+    use crate::onlinestore::OnlineStore;
+    use anyhow::Result;
+    use std::collections::HashMap;
+    use std::io::Read;
+
+    #[tokio::test]
+    async fn trait_test() -> Result<()> {
+        let client = redis::Client::open("redis://127.0.0.1/")?;
+        let con = client.get_connection_manager().await?;
+        let redis_store = super::RedisOnlineStore::new("careful_tomcat".to_string(), con).await?;
+        let arg = HashMap::from([(
+            HashEntityKey(EntityKey {
+                join_keys: vec!["driver_id".to_string()],
+                entity_values: vec![Value {
+                    val: Some(Val::Int64Val(1005)),
+                }],
+            }),
+            vec![
+                Feature::new("driver_hourly_stats".to_string(), "conv_rate".to_string()),
+                Feature::new("driver_hourly_stats".to_string(), "acc_rate".to_string()),
+            ],
+        )]);
+        let result = redis_store.get_feature_values(arg).await?;
+        println!("result: {:?}", result);
+        Ok(())
+    }
+}

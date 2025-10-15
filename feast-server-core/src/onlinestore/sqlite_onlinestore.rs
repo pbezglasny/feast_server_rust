@@ -48,7 +48,7 @@ impl SqliteStoreRow {
             feature_name: self.feature_name,
             value: self.value,
             event_ts: self.event_ts,
-            created_ts: self.created_ts,
+            created_ts: Some(self.created_ts),
         }
     }
 }

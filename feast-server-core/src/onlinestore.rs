@@ -1,3 +1,4 @@
+mod redis;
 pub mod sqlite_onlinestore;
 
 use crate::config::OnlineStoreConfig;
@@ -9,6 +10,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::debug;
 
 #[derive(Debug)]
 pub struct OnlineStoreRow {
@@ -17,7 +19,7 @@ pub struct OnlineStoreRow {
     pub feature_name: String,
     pub value: Vec<u8>,
     pub event_ts: DateTime<Utc>,
-    pub created_ts: DateTime<Utc>,
+    pub created_ts: Option<DateTime<Utc>>,
 }
 
 #[async_trait]
@@ -35,6 +37,7 @@ pub async fn get_online_store(
 ) -> Result<Arc<dyn OnlineStore>> {
     match online_store_config {
         OnlineStoreConfig::Sqlite { path } => {
+            debug!("Create SQLite online store with path: {}", path);
             let full_path = cwd
                 .map(|prefix| format!("{}/{}", prefix, path))
                 .unwrap_or_else(|| path.to_string());
@@ -45,6 +48,15 @@ pub async fn get_online_store(
             )
             .await
             .map(|sqlite| Arc::new(sqlite) as Arc<dyn OnlineStore>)
+        }
+        OnlineStoreConfig::Redis { connection_string } => {
+            debug!("Create Redis online store",);
+            redis::RedisOnlineStore::from_connection_string(
+                project.to_owned(),
+                connection_string.clone(),
+            )
+            .await
+            .map(|redis| Arc::new(redis) as Arc<dyn OnlineStore>)
         }
         other => Err(anyhow!("Unsupported online store type: {:?}", other)),
     }
