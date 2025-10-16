@@ -18,7 +18,7 @@ use feast_server_core::feast::types::{
 };
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{
-    EntityId, FeatureResults, FeatureStatus, GetOnlineFeatureRequest, GetOnlineFeatureResponse,
+    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeatureRequest, GetOnlineFeatureResponse,
     ValueWrapper,
 };
 use prost_types::Timestamp;
@@ -47,7 +47,7 @@ impl FeastGrpcService {
     fn from_request_proto(
         request: GetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeatureRequest, GrpcStatus> {
-        let mut entities: HashMap<String, Vec<EntityId>> = HashMap::new();
+        let mut entities: HashMap<String, Vec<EntityIdValue>> = HashMap::new();
         for (entity_name, values) in request.entities {
             entities.insert(
                 entity_name.clone(),
@@ -186,7 +186,7 @@ pub async fn start_server(server_config: ServerConfig, feature_store: FeatureSto
 fn repeated_value_to_entity_ids(
     entity_name: &str,
     repeated_value: GrpcRepeatedValue,
-) -> Result<Vec<EntityId>, GrpcStatus> {
+) -> Result<Vec<EntityIdValue>, GrpcStatus> {
     repeated_value
         .val
         .into_iter()
@@ -199,7 +199,7 @@ fn repeated_value_to_entity_ids(
                     entity_name, index
                 )))
             })?;
-            EntityId::try_from(val).map_err(|err| {
+            EntityIdValue::try_from(val).map_err(|err| {
                 Box::new(TonicStatus::invalid_argument(format!(
                     "Invalid value for entity {} at index {}: {}",
                     entity_name, index, err
@@ -368,7 +368,7 @@ mod tests {
         let entities = repeated_value_to_entity_ids("driver_id", repeated).unwrap();
         assert_eq!(
             entities,
-            vec![EntityId::String("driver_1".to_string()), EntityId::Int(42)]
+            vec![EntityIdValue::String("driver_1".to_string()), EntityIdValue::Int(42)]
         );
     }
 

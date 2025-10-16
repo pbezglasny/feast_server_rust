@@ -4,7 +4,6 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
-use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Arc;
@@ -66,7 +65,7 @@ impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<IndexMap<Feature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         if self
             .created_at
             .load()

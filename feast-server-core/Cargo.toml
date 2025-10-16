@@ -18,7 +18,6 @@ serde = { version = "1.0.219", features = ["default", "derive"] }
 async-trait = { version = "0.1.89" }
 arc-swap = { version = "1.7.1" }
 chrono = { version = "0.4.42", features = ["default", "serde"] }
-indexmap = { version = "2.11.4" }
 # Registry dependencies
 aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.106.0" }

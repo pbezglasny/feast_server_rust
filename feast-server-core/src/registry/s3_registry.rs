@@ -1,9 +1,7 @@
 use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
-use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use async_trait::async_trait;
-use indexmap::IndexMap;
 use prost::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -56,7 +54,7 @@ impl FeatureRegistryService for S3Registry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<IndexMap<Feature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         self.registry.request_to_view_keys(request).await
     }
 }
@@ -66,7 +64,6 @@ mod tests {
     use super::FeatureRegistryService;
     use crate::model::GetOnlineFeatureRequest;
     use anyhow::Result;
-    use std::sync::Arc;
 
     #[tokio::test]
     #[ignore]

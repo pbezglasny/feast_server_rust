@@ -1415,7 +1415,6 @@ dependencies = [
  "criterion",
  "futures",
  "glob",
- "indexmap 2.11.4",
  "murmur3",
  "prost 0.14.1",
  "prost-build 0.14.1",
