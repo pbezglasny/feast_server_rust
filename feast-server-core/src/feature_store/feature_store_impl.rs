@@ -126,6 +126,12 @@ fn entity_key_for_entity_less_feature() -> Arc<Vec<EntityKey>> {
     }])
 }
 
+struct LookupKey {
+    origin_col_name: String,
+    lookup: String,
+    value_type: value_type::Enum,
+}
+
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys(
@@ -142,7 +148,7 @@ fn feature_views_to_keys(
                 entity_keys: entity_key_for_entity_less_feature(),
             });
         } else {
-            let lookup_keys: Vec<(String, String, value_type::Enum)> = view
+            let lookup_keys: Vec<LookupKey> = view
                 .entity_columns
                 .iter()
                 .map(|col| {
@@ -156,17 +162,21 @@ fn feature_views_to_keys(
                     } else {
                         &col.name
                     };
-                    (col.name.clone(), lookup_name.clone(), col.value_type)
+                    LookupKey {
+                        origin_col_name: col.name.clone(),
+                        lookup: lookup_name.clone(),
+                        value_type: col.value_type,
+                    }
                 })
                 .collect();
             if lookup_keys.is_empty() {
                 return Err(anyhow!("Feature view {} has no entity columns", view.name));
             }
-            for (_, key, _) in lookup_keys.iter() {
-                if !requested_entity_keys.contains_key(key) {
+            for lookup_key in &lookup_keys {
+                if !requested_entity_keys.contains_key(&lookup_key.lookup) {
                     return Err(anyhow!(
                         "Missing entity key: {} for requested feature {}",
-                        key,
+                        &lookup_key.lookup,
                         feature.feature_name
                     ));
                 }
@@ -174,7 +184,7 @@ fn feature_views_to_keys(
 
             let cache_key = lookup_keys
                 .iter()
-                .map(|(col, _, _)| col.clone())
+                .map(|lookup_key| lookup_key.origin_col_name.clone())
                 .collect::<Vec<String>>()
                 .join(",");
             let entity_keys = match key_cache.entry(cache_key) {
@@ -183,18 +193,21 @@ fn feature_views_to_keys(
                     let first_lookup_key = &lookup_keys
                         .first()
                         .expect("lookup_keys should not be empty")
-                        .1;
+                        .lookup;
                     let num_entities = requested_entity_keys[first_lookup_key].len();
                     let mut entity_keys_vec = Vec::with_capacity(num_entities);
                     for i in 0..num_entities {
                         let entity_values = lookup_keys
                             .iter()
-                            .map(|(_, key, value_type)| {
-                                let values = &requested_entity_keys[key];
-                                values[i].clone().to_proto_value(*value_type)
+                            .map(|lookup_key| {
+                                let values = &requested_entity_keys[lookup_key.lookup.as_str()];
+                                values[i].clone().to_proto_value(lookup_key.value_type)
                             })
                             .collect::<Result<Vec<Value>>>()?;
-                        let join_keys = lookup_keys.iter().map(|(col, _, _)| col.clone()).collect();
+                        let join_keys = lookup_keys
+                            .iter()
+                            .map(|lookup_key| lookup_key.origin_col_name.clone())
+                            .collect();
                         entity_keys_vec.push(EntityKey {
                             join_keys,
                             entity_values,
