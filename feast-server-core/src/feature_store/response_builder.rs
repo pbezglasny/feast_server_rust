@@ -7,7 +7,7 @@ use crate::model::{
     GetOnlineFeatureResponse, TypedFeature, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
-use anyhow::{Context, Error, Result, anyhow};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
 
@@ -78,15 +78,10 @@ impl GetOnlineFeatureResponse {
                 ));
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
-            let value = ValueWrapper::from_bytes(&row.value).with_context(|| {
-                format!(
-                    "Failed to decode value feature {}:{}",
-                    row.feature_view_name, row.feature_name
-                )
-            })?;
+            let value = row.value;
             let feature_view_opt = feature_views.get(&row.feature_view_name);
             let status: FeatureStatus = {
-                if value.0.val.is_none() {
+                if value.val.is_none() {
                     FeatureStatus::NullValue
                 } else if let Some(feature_view) = feature_view_opt {
                     if let Some(expiration_time) = row.event_ts.checked_add_signed(feature_view.ttl)
@@ -106,10 +101,10 @@ impl GetOnlineFeatureResponse {
             let feature = Feature::new(row.feature_view_name.clone(), row.feature_name.clone());
             if entity_less_features_set.contains(&feature) {
                 entity_less_features
-                    .push((feature, ResponseFeatureRow(value.0, status, row.event_ts)));
+                    .push((feature, ResponseFeatureRow(value, status, row.event_ts)));
                 continue;
             }
-            entry_values.insert(feature, ResponseFeatureRow(value.0, status, row.event_ts));
+            entry_values.insert(feature, ResponseFeatureRow(value, status, row.event_ts));
         }
 
         let mut alias_to_original_map: HashMap<String, Vec<String>> = feature_views
@@ -269,7 +264,7 @@ mod tests {
             feature_view_name: "driver_hourly_stats".to_string(),
             entity_key: entity_key_bytes,
             feature_name: "acc_rate".to_string(),
-            value: feature_value.encode_to_vec(),
+            value: feature_value.clone(),
             event_ts,
             created_ts: None,
         };
@@ -324,13 +319,4 @@ mod tests {
         assert_eq!(response, expected);
         Ok(())
     }
-
-    #[test]
-    fn decode_test(){
-        let bytes = vec![8, 128, 218, 234, 198, 6];
-        let value = ValueWrapper::from_bytes(&bytes).unwrap();
-        println!("{:?}", value);
-    }
 }
-
-// u8 [8, 128,218, 234,198,6]

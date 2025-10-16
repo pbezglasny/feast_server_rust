@@ -2,7 +2,7 @@ mod redis;
 pub mod sqlite_onlinestore;
 
 use crate::config::OnlineStoreConfig;
-use crate::feast::types::EntityKey;
+use crate::feast::types::{EntityKey, Value};
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use anyhow::{Result, anyhow};
@@ -17,7 +17,7 @@ pub struct OnlineStoreRow {
     pub feature_view_name: String,
     pub entity_key: Vec<u8>,
     pub feature_name: String,
-    pub value: Vec<u8>,
+    pub value: Value,
     pub event_ts: DateTime<Utc>,
     pub created_ts: Option<DateTime<Utc>>,
 }

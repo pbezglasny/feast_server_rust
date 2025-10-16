@@ -1,11 +1,12 @@
 use crate::config::EntityKeySerializationVersion;
-use crate::feast::types::EntityKey;
+use crate::feast::types::{EntityKey, Value};
 use crate::key_serialization::serialize_key;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use prost::Message;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
 use std::collections::HashMap;
@@ -41,15 +42,28 @@ pub struct SqliteStoreRow {
 }
 
 impl SqliteStoreRow {
-    fn convert_to_online_store_row(self, feature_view_name: &str) -> OnlineStoreRow {
-        OnlineStoreRow {
+    fn try_into_online_store_row(self, feature_view_name: &str) -> Result<OnlineStoreRow> {
+        let Self {
+            entity_key,
+            feature_name,
+            value,
+            event_ts,
+            created_ts,
+        } = self;
+        let decoded_value = Value::decode(value.as_slice()).with_context(|| {
+            format!(
+                "Failed to decode value for feature {}:{}",
+                feature_view_name, feature_name
+            )
+        })?;
+        Ok(OnlineStoreRow {
             feature_view_name: feature_view_name.to_owned(),
-            entity_key: self.entity_key,
-            feature_name: self.feature_name,
-            value: self.value,
-            event_ts: self.event_ts,
-            created_ts: Some(self.created_ts),
-        }
+            entity_key,
+            feature_name,
+            value: decoded_value,
+            event_ts,
+            created_ts: Some(created_ts),
+        })
     }
 }
 
@@ -126,10 +140,10 @@ impl OnlineStore for SqliteOnlineStore {
                     sqlx_query = sqlx_query.bind(feature_name);
                 }
                 let result: Vec<SqliteStoreRow> = sqlx_query.fetch_all(&mut *connection).await?;
-                Ok(result
+                result
                     .into_iter()
-                    .map(|r| r.convert_to_online_store_row(&view_name))
-                    .collect())
+                    .map(|r| r.try_into_online_store_row(&view_name))
+                    .collect::<Result<Vec<_>>>()
             });
         }
 

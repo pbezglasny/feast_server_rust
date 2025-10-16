@@ -82,13 +82,6 @@ pub enum FeatureStatus {
 #[derive(PartialEq, Clone)]
 pub struct ValueWrapper(pub Value);
 
-impl ValueWrapper {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let val = Value::decode(bytes).with_context(|| "Failed to decode value from online-store row")?;
-        Ok(Self(val))
-    }
-}
-
 impl From<EntityId> for ValueWrapper {
     fn from(value: EntityId) -> Self {
         match value {

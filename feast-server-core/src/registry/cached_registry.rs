@@ -3,9 +3,9 @@ use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use indexmap::IndexMap;
 
 pub struct CachedFileRegistry {
     inner: ArcSwap<Box<dyn FeatureRegistryService>>,

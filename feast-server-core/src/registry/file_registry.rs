@@ -97,7 +97,10 @@ impl FileFeatureRegistry {
         Ok(result)
     }
 
-    fn feature_views_from_names(&self, names: &[Feature]) -> Result<IndexMap<Feature, FeatureView>> {
+    fn feature_views_from_names(
+        &self,
+        names: &[Feature],
+    ) -> Result<IndexMap<Feature, FeatureView>> {
         names
             .iter()
             .map(|req_feature| {

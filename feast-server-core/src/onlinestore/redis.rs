@@ -1,14 +1,14 @@
 use crate::config::OnlineStoreConfig;
+use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
-use prost::bytes::BufMut;
 use prost_types::Timestamp;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, ErrorKind, FromRedisValue, RedisResult, Value};
+use redis::{AsyncCommands, ErrorKind, FromRedisValue, RedisResult, Value as RedisValue};
 use std::collections::{HashMap, HashSet};
 
 fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
@@ -68,9 +68,9 @@ impl RedisOnlineStore {
 struct RedisDatetime(DateTime<Utc>);
 
 impl FromRedisValue for RedisDatetime {
-    fn from_redis_value(v: &Value) -> RedisResult<Self> {
+    fn from_redis_value(v: &RedisValue) -> RedisResult<Self> {
         match v {
-            Value::Int(ts) => {
+            RedisValue::Int(ts) => {
                 let datetime = DateTime::from_timestamp(*ts, 0).ok_or_else(|| {
                     redis::RedisError::from((ErrorKind::TypeError, "Invalid timestamp"))
                 })?;
@@ -102,8 +102,6 @@ impl OnlineStore for RedisOnlineStore {
         &self,
         mut features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
-        let serialized_project = self.project.as_bytes().to_vec();
-
         let mut entities: Vec<RedisRequest> = vec![];
 
         let mut pipeline = redis::pipe();
@@ -174,16 +172,21 @@ impl OnlineStore for RedisOnlineStore {
                         .get(&(feature_view_name, entity_key.clone()))
                         .cloned()
                         .flatten()
-                        // .ok_or_else(|| {
-                        //     anyhow!("Missing timestamp for feature view {}", feature_view_name)
-                        // })?;
                         .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
-                    let bytes = value.unwrap_or_default();
+                    let decoded_value = match value {
+                        Some(bytes) => FeastValue::decode(bytes.as_slice()).with_context(|| {
+                            format!(
+                                "Failed to decode value for feature {}:{} from bytes: {:?}",
+                                feature_view_name, feature_name, bytes
+                            )
+                        })?,
+                        None => FeastValue::default(),
+                    };
                     result_rows.push(OnlineStoreRow {
                         feature_view_name: feature_view_name.to_string(),
                         entity_key: entity_key.clone(),
                         feature_name: feature_name.to_string(),
-                        value: bytes,
+                        value: decoded_value,
                         event_ts: ts,
                         created_ts: None,
                     });
@@ -192,10 +195,22 @@ impl OnlineStore for RedisOnlineStore {
                     entity_key,
                     feature_view_name,
                 } => {
-                    let ts = value
-                        .map(|bytes| Timestamp::decode(bytes.as_slice()))
-                        .filter(|res| res.is_ok())
-                        .and_then(|ts| DateTime::<Utc>::from_timestamp(ts.unwrap().seconds, 0));
+                    let ts = match value {
+                        Some(bytes) => {
+                            let timestamp_proto = Timestamp::decode(bytes.as_slice())
+                                .with_context(|| {
+                                    format!(
+                                        "Failed to decode timestamp for feature view {}",
+                                        feature_view_name
+                                    )
+                                })?;
+                            DateTime::<Utc>::from_timestamp(
+                                timestamp_proto.seconds,
+                                timestamp_proto.nanos.max(0) as u32,
+                            )
+                        }
+                        None => None,
+                    };
                     timestamp_map.insert((feature_view_name, entity_key), ts);
                 }
             }
