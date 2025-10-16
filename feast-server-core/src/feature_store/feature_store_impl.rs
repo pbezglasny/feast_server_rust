@@ -38,7 +38,7 @@ impl FeatureStore {
             self.registry.request_to_view_keys(&request).await?;
 
         let features_with_keys: Vec<FeatureWithKeys> =
-            feature_views_to_keys(&feature_to_view, &request.entities)?;
+            feature_views_to_keys(feature_to_view, &request.entities)?;
 
         let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
 
@@ -135,7 +135,7 @@ struct LookupKey {
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys(
-    feature_to_view: &IndexMap<Feature, FeatureView>,
+    feature_to_view: IndexMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityId>>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
@@ -143,7 +143,7 @@ fn feature_views_to_keys(
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
             result.push(FeatureWithKeys {
-                feature: feature.clone(),
+                feature,
                 feature_type: FeatureType::EntityLess,
                 entity_keys: entity_key_for_entity_less_feature(),
             });
@@ -190,10 +190,11 @@ fn feature_views_to_keys(
             let entity_keys = match key_cache.entry(cache_key) {
                 Entry::Occupied(entry) => Arc::clone(entry.get()),
                 Entry::Vacant(entry) => {
-                    let first_lookup_key = &lookup_keys
+                    let first_lookup_key = lookup_keys
                         .first()
                         .expect("lookup_keys should not be empty")
-                        .lookup;
+                        .lookup
+                        .as_str();
                     let num_entities = requested_entity_keys[first_lookup_key].len();
                     let mut entity_keys_vec = Vec::with_capacity(num_entities);
                     for i in 0..num_entities {
@@ -217,7 +218,7 @@ fn feature_views_to_keys(
                 }
             };
             result.push(FeatureWithKeys {
-                feature: feature.clone(),
+                feature,
                 feature_type: FeatureType::Plain,
                 entity_keys,
             });
@@ -344,7 +345,7 @@ mod tests {
                 vec![EntityId::Int(22), EntityId::Int(24), EntityId::Int(26)],
             ),
         ]);
-        let result = feature_views_to_keys(&features, &requested_entity_keys)?;
+        let result = feature_views_to_keys(features, &requested_entity_keys)?;
         assert_eq!(result.len(), 2);
         let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
@@ -396,7 +397,7 @@ mod tests {
             "alias_1".to_string(),
             vec![EntityId::Int(12), EntityId::Int(14), EntityId::Int(16)],
         )]);
-        let result = feature_views_to_keys(&features, &requested_entity_keys)?;
+        let result = feature_views_to_keys(features, &requested_entity_keys)?;
         assert_eq!(result.len(), 1);
         let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
