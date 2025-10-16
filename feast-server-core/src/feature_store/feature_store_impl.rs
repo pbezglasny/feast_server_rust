@@ -196,12 +196,18 @@ fn feature_views_to_keys(
                         .lookup
                         .as_str();
                     let num_entities = requested_entity_keys[first_lookup_key].len();
+
+                    let lookup_values_vec: Vec<_> = lookup_keys
+                        .iter()
+                        .map(|lookup_key| &requested_entity_keys[lookup_key.lookup.as_str()])
+                        .collect();
+
                     let mut entity_keys_vec = Vec::with_capacity(num_entities);
                     for i in 0..num_entities {
                         let entity_values = lookup_keys
                             .iter()
-                            .map(|lookup_key| {
-                                let values = &requested_entity_keys[lookup_key.lookup.as_str()];
+                            .zip(lookup_values_vec.iter())
+                            .map(|(lookup_key, values)| {
                                 values[i].clone().to_proto_value(lookup_key.value_type)
                             })
                             .collect::<Result<Vec<Value>>>()?;
