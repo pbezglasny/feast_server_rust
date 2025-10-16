@@ -14,6 +14,112 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Value, FeatureStatus, DateTime<Utc>);
 
+fn get_feature_status(
+    value: &Value,
+    feature_view: Option<&FeatureView>,
+    event_ts: &DateTime<Utc>,
+) -> FeatureStatus {
+    if value.val.is_none() {
+        FeatureStatus::NullValue
+    } else if let Some(feature_view) = feature_view {
+        if let Some(expiration_time) = event_ts.checked_add_signed(feature_view.ttl) {
+            if Utc::now() > expiration_time {
+                FeatureStatus::OutsideMaxAge
+            } else {
+                FeatureStatus::Present
+            }
+        } else {
+            FeatureStatus::Present
+        }
+    } else {
+        FeatureStatus::Present
+    }
+}
+
+struct ProcessedFeatures {
+    entity_to_features: HashMap<String, HashSet<Feature>>,
+    feature_values: HashMap<String, HashMap<EntityId, HashMap<Feature, ResponseFeatureRow>>>,
+    entity_less_features: Vec<(Feature, ResponseFeatureRow)>,
+}
+
+fn process_rows(
+    rows: Vec<OnlineStoreRow>,
+    feature_views: &HashMap<String, FeatureView>,
+    feature_list: &[TypedFeature],
+) -> Result<ProcessedFeatures> {
+    // feature name to mapping where key is entity id value from request and values are
+    // associated values for that feature
+    let mut feature_values: HashMap<
+        String,
+        HashMap<EntityId, HashMap<Feature, ResponseFeatureRow>>,
+    > = HashMap::new();
+
+    // entity key name to set of features from views where this entity is used
+    let mut entity_to_features: HashMap<String, HashSet<Feature>> = HashMap::new();
+
+    let mut entity_less_features: Vec<(Feature, ResponseFeatureRow)> = vec![];
+
+    let entity_less_features_set: HashSet<Feature> = feature_list
+        .iter()
+        .filter(|f| f.feature_type == FeatureType::EntityLess)
+        .map(|f| Feature {
+            feature_view_name: f.feature.feature_view_name.clone(),
+            feature_name: f.feature.feature_name.clone(),
+        })
+        .collect();
+
+    for row in rows.into_iter() {
+        let OnlineStoreRow {
+            feature_view_name,
+            entity_key,
+            feature_name,
+            value,
+            event_ts,
+            created_ts: _,
+        } = row;
+        let EntityKey {
+            mut join_keys,
+            mut entity_values,
+        } = entity_key.0;
+        if join_keys.len() != 1 {
+            return Err(anyhow!("Len of key is greater than 1"));
+        }
+        let key_name = join_keys
+            .pop()
+            .ok_or(anyhow!("Incorrect format of join key"))?;
+        let key_value = EntityId::try_from(
+            entity_values
+                .pop()
+                .unwrap()
+                .val
+                .ok_or(anyhow!("Empty key value for key name {}", key_name))?,
+        )?;
+        let feature = Feature::new(feature_view_name, feature_name);
+        entity_to_features
+            .entry(key_name.clone())
+            .or_default()
+            .insert(feature.clone());
+        let mut entity_key_entry = feature_values.entry(key_name).or_default();
+        let mut entry_values = entity_key_entry.entry(key_value).or_default();
+        let status: FeatureStatus = get_feature_status(
+            &value,
+            feature_views.get(&feature.feature_view_name),
+            &event_ts,
+        );
+        if entity_less_features_set.contains(&feature) {
+            entity_less_features.push((feature, ResponseFeatureRow(value, status, row.event_ts)));
+            continue;
+        }
+        entry_values.insert(feature, ResponseFeatureRow(value, status, row.event_ts));
+    }
+
+    Ok(ProcessedFeatures {
+        entity_to_features,
+        feature_values,
+        entity_less_features,
+    })
+}
+
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
@@ -31,93 +137,20 @@ impl GetOnlineFeatureResponse {
         feature_list: Vec<TypedFeature>,
         full_feature_names: bool,
     ) -> Result<Self> {
-        // feature name to mapping where key is entity id value from request and values are
-        // associated values for that feature
-        let mut feature_values: HashMap<
-            String,
-            HashMap<EntityId, HashMap<Feature, ResponseFeatureRow>>,
-        > = HashMap::new();
-
-        // entity key name to set of features from views where this entity is used
-        let mut entity_to_features: HashMap<String, HashSet<Feature>> = HashMap::new();
-
-        let mut entity_less_features: Vec<(Feature, ResponseFeatureRow)> = vec![];
-        let entity_less_features_set: HashSet<Feature> = feature_list
-            .iter()
-            .filter(|f| f.feature_type == FeatureType::EntityLess)
-            .map(|f| Feature {
-                feature_view_name: f.feature.feature_view_name.clone(),
-                feature_name: f.feature.feature_name.clone(),
-            })
-            .collect();
-
-        for row in rows.into_iter() {
-            let OnlineStoreRow {
-                feature_view_name,
-                entity_key,
-                feature_name,
-                value,
-                event_ts,
-                created_ts: _,
-            } = row;
-            let EntityKey {
-                mut join_keys,
-                mut entity_values,
-            } = entity_key.0;
-            if join_keys.len() != 1 {
-                return Err(anyhow!("Len of key is greater than 1"));
-            }
-            let key_name = join_keys
-                .pop()
-                .ok_or(anyhow!("Incorrect format of join key"))?;
-            let key_value = EntityId::try_from(
-                entity_values
-                    .pop()
-                    .unwrap()
-                    .val
-                    .ok_or(anyhow!("empty key value"))?,
-            )?;
-            let feature = Feature::new(feature_view_name, feature_name);
-            entity_to_features
-                .entry(key_name.clone())
-                .or_default()
-                .insert(feature.clone());
-            let mut entity_key_entry = feature_values.entry(key_name).or_default();
-            let mut entry_values = entity_key_entry.entry(key_value).or_default();
-            let feature_view_opt = feature_views.get(&feature.feature_view_name);
-            let status: FeatureStatus = {
-                if value.val.is_none() {
-                    FeatureStatus::NullValue
-                } else if let Some(feature_view) = feature_view_opt {
-                    if let Some(expiration_time) = event_ts.checked_add_signed(feature_view.ttl) {
-                        if Utc::now() > expiration_time {
-                            FeatureStatus::OutsideMaxAge
-                        } else {
-                            FeatureStatus::Present
-                        }
-                    } else {
-                        FeatureStatus::Present
-                    }
-                } else {
-                    FeatureStatus::Present
-                }
-            };
-            if entity_less_features_set.contains(&feature) {
-                entity_less_features
-                    .push((feature, ResponseFeatureRow(value, status, row.event_ts)));
-                continue;
-            }
-            entry_values.insert(feature, ResponseFeatureRow(value, status, row.event_ts));
-        }
+        let ProcessedFeatures {
+            mut entity_to_features,
+            mut feature_values,
+            entity_less_features,
+        } = process_rows(rows, &feature_views, &feature_list)?;
 
         let mut alias_to_original_map: HashMap<String, Vec<String>> = feature_views
-            .values()
-            .filter_map(|fv| fv.join_key_map.as_ref())
+            .into_iter()
+            .filter_map(|(_, fv)| fv.join_key_map)
             .fold(HashMap::new(), |mut acc, join_key_mapping| {
                 for (original_name, alias_name) in join_key_mapping {
-                    acc.entry(alias_name.clone())
+                    acc.entry(alias_name)
                         .or_insert(Vec::new())
-                        .push(original_name.clone());
+                        .push(original_name);
                 }
                 acc
             })
@@ -132,16 +165,16 @@ impl GetOnlineFeatureResponse {
                 .remove(&entity_key_name)
                 .unwrap_or_default();
             lookup_keys.push(entity_key_name.clone());
-            for lookup_key in &lookup_keys {
+            for lookup_key in lookup_keys.into_iter() {
                 let entity_feature = Feature::entity_feature(lookup_key.clone());
                 if processed_features.contains(&entity_feature) {
                     continue;
                 }
                 processed_features.insert(entity_feature.clone());
                 let mut associated_values_map =
-                    feature_values.remove(lookup_key).unwrap_or_default();
+                    feature_values.remove(&lookup_key).unwrap_or_default();
                 let associated_features: HashSet<Feature> = entity_to_features
-                    .remove(lookup_key)
+                    .remove(&lookup_key)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|f| !processed_features.contains(f))
