@@ -120,6 +120,17 @@ fn process_rows(
     })
 }
 
+#[derive(Hash, PartialEq, Eq)]
+struct FeatureRef<'a> {
+    feature: &'a Feature,
+}
+
+impl<'a> From<&'a Feature> for FeatureRef<'a> {
+    fn from(feature: &'a Feature) -> Self {
+        Self { feature }
+    }
+}
+
 impl GetOnlineFeatureResponse {
     /// Build GetOnlineFeatureResponse from entity keys of request data,
     /// online store rows and feature view to ttl mapping.
@@ -179,11 +190,12 @@ impl GetOnlineFeatureResponse {
                     .into_iter()
                     .filter(|f| !processed_features.contains(f))
                     .collect();
-                let mut features: HashMap<Feature, FeatureResults> = HashMap::new();
+                let mut features: HashMap<FeatureRef, FeatureResults> = HashMap::new();
                 for entity_val in &values {
                     let mut values = associated_values_map.remove(entity_val).unwrap_or_default();
                     {
-                        let mut entity_result = features.entry(entity_feature.clone()).or_default();
+                        let mut entity_result =
+                            features.entry((&entity_feature).into()).or_default();
                         entity_result
                             .values
                             .push(ValueWrapper::from(entity_val.clone()));
@@ -192,7 +204,7 @@ impl GetOnlineFeatureResponse {
                     }
                     for associate_feature in &associated_features {
                         let value_opt = values.remove(associate_feature);
-                        let feature_result = features.entry(associate_feature.clone()).or_default();
+                        let feature_result = features.entry(associate_feature.into()).or_default();
                         match value_opt {
                             None => {
                                 feature_result
@@ -218,24 +230,24 @@ impl GetOnlineFeatureResponse {
                     .push(entity_feature.feature_name.clone());
                 result.results.push(
                     features
-                        .remove(&Feature::entity_feature(
-                            entity_feature.feature_name.clone(),
-                        ))
+                        .remove(&FeatureRef::from(&entity_feature))
                         .ok_or(anyhow!("Missing values for entity {}", entity_key_name))?,
                 );
 
-                for feature in associated_features {
-                    result.results.push(features.remove(&feature).ok_or(anyhow!(
-                        "Missing values for feature {}",
-                        feature.full_name()
-                    ))?);
+                for feature in &associated_features {
+                    result
+                        .results
+                        .push(features.remove(&FeatureRef::from(feature)).ok_or(anyhow!(
+                            "Missing values for feature {}",
+                            feature.full_name()
+                        ))?);
                     let feature_name = if full_feature_names {
                         feature.full_name()
                     } else {
                         feature.feature_name.clone()
                     };
                     result.metadata.feature_names.push(feature_name);
-                    processed_features.insert(feature);
+                    processed_features.insert(feature.clone());
                 }
                 processed_features.insert(entity_feature);
             }
@@ -244,7 +256,7 @@ impl GetOnlineFeatureResponse {
             if processed_features.contains(&feature) {
                 continue;
             }
-            processed_features.insert(feature.clone());
+
             let size = result.results.first().map(|r| r.values.len()).unwrap_or(1);
             let mut feature_result = FeatureResults {
                 values: vec![ValueWrapper(value); size],
@@ -258,6 +270,7 @@ impl GetOnlineFeatureResponse {
                 feature.feature_name.clone()
             };
             result.metadata.feature_names.push(feature_name);
+            processed_features.insert(feature);
         }
         Ok(result)
     }
