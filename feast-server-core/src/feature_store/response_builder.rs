@@ -276,7 +276,7 @@ impl GetOnlineFeatureResponseBuilder {
                 statuses: vec![row.2; self.num_values],
                 event_timestamps: vec![row.3; self.num_values],
             });
-            self.next_feature_idx += 2;
+            self.next_feature_idx += 1;
         }
         self
     }
