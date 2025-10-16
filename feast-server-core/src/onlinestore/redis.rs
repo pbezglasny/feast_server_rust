@@ -2,7 +2,7 @@ use crate::config::OnlineStoreConfig;
 use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
@@ -226,6 +226,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[tokio::test]
+    #[ignore]
     async fn trait_test() -> Result<()> {
         let client = redis::Client::open("redis://127.0.0.1/")?;
         let con = client.get_connection_manager().await?;
