@@ -19,19 +19,19 @@ impl CachedFileRegistry {
     pub async fn create_cached_registry_and_start_background_thread<F, Fut>(
         feature_registry_fn: F,
         ttl: u64,
-    ) -> Arc<CachedFileRegistry>
+    ) -> Result<Arc<dyn FeatureRegistryService>>
     where
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<FileFeatureRegistry>> + Send + 'static,
     {
         let feature_registry = feature_registry_fn().await;
         let result = Arc::new(CachedFileRegistry {
-            inner: ArcSwap::from_pointee(Box::new(feature_registry.unwrap())),
+            inner: ArcSwap::from_pointee(Box::new(feature_registry?)),
             created_at: ArcSwap::from_pointee(Utc::now()),
             ttl,
         });
         start_refresh_task(result.clone(), feature_registry_fn, ttl);
-        result
+        Ok(result)
     }
 }
 

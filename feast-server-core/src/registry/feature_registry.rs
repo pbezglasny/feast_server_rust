@@ -37,13 +37,11 @@ pub async fn get_registry(
                             async move { FileFeatureRegistry::from_path(&path) }
                         }
                     };
-                    let cached_registry =
-                        CachedFileRegistry::create_cached_registry_and_start_background_thread(
-                            producer_fn,
-                            ttl,
-                        )
-                        .await;
-                    Ok(cached_registry)
+                    CachedFileRegistry::create_cached_registry_and_start_background_thread(
+                        producer_fn,
+                        ttl,
+                    )
+                    .await
                 } else {
                     let registry = FileFeatureRegistry::from_path(path.as_str())?;
                     Ok(Arc::new(registry))
