@@ -2,7 +2,7 @@ use crate::config::OnlineStoreConfig;
 use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
@@ -10,6 +10,7 @@ use prost_types::Timestamp;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, ErrorKind, FromRedisValue, RedisResult, Value as RedisValue};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
     let mut key_bytes = feature.feature_view_name.as_bytes().to_vec();
@@ -87,11 +88,11 @@ impl FromRedisValue for RedisDatetime {
 enum RedisRequest<'a> {
     FeatureRow {
         feature_view_name: &'a str,
-        entity_key: Vec<u8>,
+        entity_key: &'a HashEntityKey,
         feature_name: &'a str,
     },
     TimestampRow {
-        entity_key: Vec<u8>,
+        entity_key: &'a HashEntityKey,
         feature_view_name: &'a str,
     },
 }
@@ -109,39 +110,34 @@ impl OnlineStore for RedisOnlineStore {
         for (key, feature_vec) in features.iter() {
             let mut seen_views: HashSet<&str> = HashSet::new();
             let mut feature_keys: Vec<Vec<u8>> = vec![];
-            let mut view_keys: Vec<Vec<u8>> = vec![];
             let mut hset_entity_key = crate::key_serialization::serialize_key(
                 &key.0,
                 crate::config::EntityKeySerializationVersion::V3,
             )?;
             hset_entity_key.append(&mut self.project.clone().as_bytes().to_vec());
             for feature in feature_vec {
-                feature_keys.push(feature_redis_key(&feature)?);
                 if !seen_views.contains(&feature.feature_view_name.as_ref()) {
                     seen_views.insert(feature.feature_view_name.as_ref());
-                    view_keys.push(
+                    feature_keys.push(
                         ["_ts:", feature.feature_view_name.as_ref()]
                             .concat()
                             .as_bytes()
                             .to_vec(),
                     );
                     entities.push(RedisRequest::TimestampRow {
-                        entity_key: hset_entity_key.clone(),
+                        entity_key: key,
                         feature_view_name: &feature.feature_view_name,
                     });
                 }
+                feature_keys.push(feature_redis_key(&feature)?);
                 entities.push(RedisRequest::FeatureRow {
                     feature_view_name: &feature.feature_view_name,
-                    entity_key: hset_entity_key.clone(),
+                    entity_key: key,
                     feature_name: &feature.feature_name,
                 });
             }
 
-            pipeline
-                .cmd("HMGET")
-                .arg(hset_entity_key)
-                .arg(feature_keys)
-                .arg(view_keys);
+            pipeline.cmd("HMGET").arg(hset_entity_key).arg(feature_keys);
         }
 
         let connection = &mut self.connection_pool.clone();
@@ -160,7 +156,8 @@ impl OnlineStore for RedisOnlineStore {
             ));
         }
         let mut result_rows: Vec<OnlineStoreRow> = vec![];
-        let mut timestamp_map: HashMap<(&str, Vec<u8>), Option<DateTime<Utc>>> = HashMap::new();
+        let mut timestamp_map: HashMap<(&str, &HashEntityKey), Option<DateTime<Utc>>> =
+            HashMap::new();
         for (request, value) in entities.into_iter().zip(results.into_iter().flatten()) {
             match request {
                 RedisRequest::FeatureRow {
@@ -169,7 +166,7 @@ impl OnlineStore for RedisOnlineStore {
                     feature_name,
                 } => {
                     let ts = timestamp_map
-                        .get(&(feature_view_name, entity_key.clone()))
+                        .get(&(feature_view_name, entity_key))
                         .cloned()
                         .flatten()
                         .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
@@ -227,7 +224,6 @@ mod tests {
     use crate::onlinestore::OnlineStore;
     use anyhow::Result;
     use std::collections::HashMap;
-    use std::io::Read;
 
     #[tokio::test]
     async fn trait_test() -> Result<()> {

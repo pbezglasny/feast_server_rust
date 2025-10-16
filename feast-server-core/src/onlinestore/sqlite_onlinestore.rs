@@ -1,5 +1,6 @@
 use crate::config::EntityKeySerializationVersion;
 use crate::feast::types::{EntityKey, Value};
+use crate::key_serialization::deserialize_key;
 use crate::key_serialization::serialize_key;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
@@ -56,9 +57,17 @@ impl SqliteStoreRow {
                 feature_view_name, feature_name
             )
         })?;
+        let entity_key =
+            deserialize_key(entity_key, EntityKeySerializationVersion::V3).map_err(|e| {
+                anyhow!(
+                    "Failed to deserialize entity key for feature view {}: {:?}",
+                    feature_view_name,
+                    e
+                )
+            })?;
         Ok(OnlineStoreRow {
             feature_view_name: feature_view_name.to_owned(),
-            entity_key,
+            entity_key: HashEntityKey(entity_key),
             feature_name,
             value: decoded_value,
             event_ts,

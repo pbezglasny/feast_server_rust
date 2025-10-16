@@ -55,7 +55,7 @@ impl GetOnlineFeatureResponse {
             let EntityKey {
                 mut join_keys,
                 mut entity_values,
-            } = deserialize_key(row.entity_key, EntityKeySerializationVersion::V3)?;
+            } = row.entity_key.0;
             if join_keys.len() != 1 {
                 return Err(anyhow!("Len of key is greater than 1"));
             }
@@ -233,6 +233,7 @@ mod tests {
     use crate::feast::types::value::Val;
     use crate::feast::types::{EntityKey, Value};
     use crate::key_serialization::serialize_key;
+    use crate::model::HashEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
     use prost::Message;
@@ -250,19 +251,15 @@ mod tests {
         let feature_value = Value {
             val: Some(Val::Int64Val(42)),
         };
-        let entity_key_bytes = serialize_key(
-            &EntityKey {
-                join_keys: vec!["driver_id".to_string()],
-                entity_values: vec![Value {
-                    val: Some(Val::Int64Val(1001)),
-                }],
-            },
-            EntityKeySerializationVersion::V3,
-        )?;
-
+        let entity_key = EntityKey {
+            join_keys: vec!["driver_id".to_string()],
+            entity_values: vec![Value {
+                val: Some(Val::Int64Val(1001)),
+            }],
+        };
         let row = OnlineStoreRow {
             feature_view_name: "driver_hourly_stats".to_string(),
-            entity_key: entity_key_bytes,
+            entity_key: HashEntityKey(entity_key),
             feature_name: "acc_rate".to_string(),
             value: feature_value.clone(),
             event_ts,
