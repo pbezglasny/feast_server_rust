@@ -65,7 +65,7 @@ impl RedisOnlineStore {
         connection_string: String,
     ) -> Result<Self> {
         let connection_pool = ConnectionManager::new(
-            redis::Client::open(connection_string.as_str())
+            redis::Client::open(add_redis_prefix_to_connection_string(&connection_string).as_str())
                 .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
         )
         .await?;
