@@ -3,12 +3,16 @@ use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
+use chrono::{DateTime, TimeDelta, Utc};
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::ops::Add;
 use std::sync::Arc;
 
 pub struct CachedFileRegistry {
     inner: ArcSwap<Box<dyn FeatureRegistryService>>,
+    created_at: ArcSwap<DateTime<Utc>>,
+    ttl: u64,
 }
 
 impl CachedFileRegistry {
@@ -22,7 +26,9 @@ impl CachedFileRegistry {
     {
         let feature_registry = feature_registry_fn().await;
         let result = Arc::new(CachedFileRegistry {
-            inner: ArcSwap::new(Arc::new(Box::new(feature_registry.unwrap()))),
+            inner: ArcSwap::from_pointee(Box::new(feature_registry.unwrap())),
+            created_at: ArcSwap::from_pointee(Utc::now()),
+            ttl,
         });
         start_refresh_task(result.clone(), feature_registry_fn, ttl);
         result
@@ -42,10 +48,15 @@ fn start_refresh_task<F, Fut>(
         loop {
             interval.tick().await;
             let new_registry = feature_registry_fn().await;
-            // TODO: handle error
-            registry
-                .inner
-                .store(Arc::new(Box::new(new_registry.unwrap())));
+            match new_registry {
+                Ok(reg) => {
+                    registry.inner.store(Arc::new(Box::new(reg)));
+                    registry.created_at.store(Arc::new(Utc::now()));
+                }
+                Err(msg) => {
+                    tracing::error!("Failed to refresh registry: {:?}", msg);
+                }
+            }
         }
     });
 }
@@ -56,6 +67,14 @@ impl FeatureRegistryService for CachedFileRegistry {
         &self,
         request: &GetOnlineFeatureRequest,
     ) -> Result<IndexMap<Feature, FeatureView>> {
+        if self
+            .created_at
+            .load()
+            .add(TimeDelta::seconds(self.ttl as i64))
+            .lt(&Utc::now())
+        {
+            tracing::warn!("Using stale registry");
+        }
         let registry = self.inner.load();
         registry.request_to_view_keys(request).await
     }

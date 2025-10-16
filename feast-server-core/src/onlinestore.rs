@@ -1,3 +1,6 @@
+//! Online store interface and implementations for different backends.
+//! Contains logic for retrieving feature values from online stores.
+
 mod redis;
 pub mod sqlite_onlinestore;
 

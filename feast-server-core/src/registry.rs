@@ -1,3 +1,5 @@
+//! Registry module for managing feature views and features metadata.
+
 use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
 use anyhow::Result;
 use async_trait::async_trait;
