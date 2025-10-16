@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 pub mod config;
+pub mod error;
 pub mod feature_store;
 mod key_serialization;
 pub mod model;

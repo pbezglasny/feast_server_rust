@@ -9,7 +9,7 @@ use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 use tracing;
@@ -178,33 +178,32 @@ fn feature_views_to_keys(
                 .map(|(col, _, _)| col.clone())
                 .collect::<Vec<String>>()
                 .join(",");
-            if !key_cache.contains_key(&cache_key) {
-                let mut entity_keys: Vec<EntityKey> = vec![];
-                let first_lookup_key = &lookup_keys
-                    .first()
-                    .expect("lookup_keys should not be empty")
-                    .1;
-                let num_entities = requested_entity_keys[first_lookup_key].len();
-                for i in 0..num_entities {
-                    let entity_values: Result<Vec<Value>> = lookup_keys
-                        .iter()
-                        .map(|(_, key, value_type)| {
-                            let values = &requested_entity_keys[key];
-                            values[i].clone().to_proto_value(*value_type)
-                        })
-                        .collect();
-                    let entity_key = EntityKey {
-                        join_keys: lookup_keys
+            let entity_keys = match key_cache.entry(cache_key) {
+                Entry::Occupied(entry) => Arc::clone(entry.get()),
+                Entry::Vacant(entry) => {
+                    let first_lookup_key = &lookup_keys
+                        .first()
+                        .expect("lookup_keys should not be empty")
+                        .1;
+                    let num_entities = requested_entity_keys[first_lookup_key].len();
+                    let mut entity_keys_vec = Vec::with_capacity(num_entities);
+                    for i in 0..num_entities {
+                        let entity_values = lookup_keys
                             .iter()
-                            .map(|(col, _, value_type)| col.clone())
-                            .collect(),
-                        entity_values: entity_values?,
-                    };
-                    entity_keys.push(entity_key);
+                            .map(|(_, key, value_type)| {
+                                let values = &requested_entity_keys[key];
+                                values[i].clone().to_proto_value(*value_type)
+                            })
+                            .collect::<Result<Vec<Value>>>()?;
+                        let join_keys = lookup_keys.iter().map(|(col, _, _)| col.clone()).collect();
+                        entity_keys_vec.push(EntityKey {
+                            join_keys,
+                            entity_values,
+                        });
+                    }
+                    Arc::clone(entry.insert(Arc::new(entity_keys_vec)))
                 }
-                key_cache.insert(cache_key.clone(), Arc::new(entity_keys));
-            }
-            let entity_keys = key_cache.get(&cache_key).unwrap().clone();
+            };
             result.push(FeatureWithKeys {
                 feature: feature.clone(),
                 feature_type: FeatureType::Plain,

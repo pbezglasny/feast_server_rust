@@ -52,6 +52,14 @@ impl GetOnlineFeatureResponse {
             .collect();
 
         for row in rows.into_iter() {
+            let OnlineStoreRow {
+                feature_view_name,
+                entity_key,
+                feature_name,
+                value,
+                event_ts,
+                created_ts: _,
+            } = row;
             let EntityKey {
                 mut join_keys,
                 mut entity_values,
@@ -69,23 +77,22 @@ impl GetOnlineFeatureResponse {
                     .val
                     .ok_or(anyhow!("empty key value"))?,
             )?;
+            let feature = Feature::new(feature_view_name, feature_name);
             entity_to_features
                 .entry(key_name.clone())
                 .or_default()
-                .insert(Feature::new(
-                    row.feature_view_name.clone(),
-                    row.feature_name.clone(),
-                ));
+                .insert(feature.clone());
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
+            let value_wrapper = ValueWrapper::from_bytes(&value)?;
+            let feature_view_opt = feature_views.get(&feature.feature_view_name);
             let value = row.value;
             let feature_view_opt = feature_views.get(&row.feature_view_name);
             let status: FeatureStatus = {
                 if value.val.is_none() {
                     FeatureStatus::NullValue
                 } else if let Some(feature_view) = feature_view_opt {
-                    if let Some(expiration_time) = row.event_ts.checked_add_signed(feature_view.ttl)
-                    {
+                    if let Some(expiration_time) = event_ts.checked_add_signed(feature_view.ttl) {
                         if Utc::now() > expiration_time {
                             FeatureStatus::OutsideMaxAge
                         } else {
@@ -98,7 +105,7 @@ impl GetOnlineFeatureResponse {
                     FeatureStatus::Present
                 }
             };
-            let feature = Feature::new(row.feature_view_name.clone(), row.feature_name.clone());
+            let value_proto = value_wrapper.0;
             if entity_less_features_set.contains(&feature) {
                 entity_less_features
                     .push((feature, ResponseFeatureRow(value, status, row.event_ts)));
