@@ -86,11 +86,11 @@ fn process_rows(
             .ok_or(anyhow!("Incorrect format of join key"))?;
         let key_value = EntityId::try_from(
             entity_values
+            entity_values
                 .pop()
-                .unwrap()
+                .ok_or_else(|| anyhow!("Missing entity value for key name {}", key_name))?
                 .val
-                .ok_or(anyhow!("Empty key value for key name {}", key_name))?,
-        )?;
+                .ok_or_else(|| anyhow!("Empty key value for key name {}", key_name))?,
         let feature = Feature::new(feature_view_name, feature_name);
         entity_to_features
             .entry(key_name.clone())
