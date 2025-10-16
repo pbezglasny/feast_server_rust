@@ -95,7 +95,7 @@ fn group_rows(
             EntityColumnRef::new(feature_view_name.clone(), entity_key_name.clone());
         let lookup_key = lookup_mapping
             .get(&entity_col_ref)
-            .unwrap_or(&entity_key_name);
+            .expect("programming error: lookup_mapping should contain all entity columns");
         let entity_id_value = entity_key.0.entity_values[0]
             .val
             .as_ref()
