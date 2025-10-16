@@ -63,7 +63,7 @@ impl GetOnlineFeatureResponse {
             let EntityKey {
                 mut join_keys,
                 mut entity_values,
-            } = row.entity_key.0;
+            } = entity_key.0;
             if join_keys.len() != 1 {
                 return Err(anyhow!("Len of key is greater than 1"));
             }
@@ -84,10 +84,7 @@ impl GetOnlineFeatureResponse {
                 .insert(feature.clone());
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
-            let value_wrapper = ValueWrapper::from_bytes(&value)?;
             let feature_view_opt = feature_views.get(&feature.feature_view_name);
-            let value = row.value;
-            let feature_view_opt = feature_views.get(&row.feature_view_name);
             let status: FeatureStatus = {
                 if value.val.is_none() {
                     FeatureStatus::NullValue
@@ -105,7 +102,6 @@ impl GetOnlineFeatureResponse {
                     FeatureStatus::Present
                 }
             };
-            let value_proto = value_wrapper.0;
             if entity_less_features_set.contains(&feature) {
                 entity_less_features
                     .push((feature, ResponseFeatureRow(value, status, row.event_ts)));
