@@ -92,6 +92,8 @@ fn deserialize_val(bytes: &[u8], mut idx: usize) -> Result<(Val, usize)> {
     }
 }
 
+/// Serialize entity key to bytes.
+/// Support only V3 version of serializer.
 pub fn serialize_key(
     entity_key: &EntityKey,
     serializer_version: EntityKeySerializationVersion,
@@ -115,13 +117,19 @@ pub fn serialize_key(
         bytes.extend(key.bytes());
     }
     for key in &sorted_keys {
-        let value = key_map.get(key).ok_or(anyhow!("Key not found in map"))?;
+        let value = key_map.get(key).ok_or(anyhow!(
+            "Error while serializing entity key {:?}. Cannot find value for key {}",
+            entity_key,
+            key
+        ))?;
         let value_bytes = serialize_value(value)?;
         bytes.extend(value_bytes);
     }
     Ok(bytes)
 }
 
+/// Deserialize entity key from bytes.
+/// Support only V3 version of serializer.
 pub fn deserialize_key(
     bytes: Vec<u8>,
     serializer_version: EntityKeySerializationVersion,
