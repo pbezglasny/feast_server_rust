@@ -372,7 +372,13 @@ mod tests {
                 .map(|s| s.as_str())
                 .collect::<HashSet<&str>>(),
         );
-        let result = feature_views_to_keys(features, &requested_entity_keys, &lookup_mapping)?;
+        let mut result = feature_views_to_keys(features, &requested_entity_keys, &lookup_mapping)?;
+        result.sort_by_key(|f| {
+            (
+                f.feature.feature_view_name.clone(),
+                f.feature.feature_name.clone(),
+            )
+        });
         assert_eq!(result.len(), 2);
         let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
@@ -389,7 +395,7 @@ mod tests {
             &[(12, 22), (14, 24), (16, 26)],
         );
 
-        let expected = vec![
+        let mut expected = vec![
             FeatureWithKeys {
                 feature: feature_1,
                 feature_type: FeatureType::Plain,
@@ -401,6 +407,13 @@ mod tests {
                 entity_keys: Arc::new(entity_values_2),
             },
         ];
+
+        expected.sort_by_key(|f| {
+            (
+                f.feature.feature_view_name.clone(),
+                f.feature.feature_name.clone(),
+            )
+        });
         assert_eq!(result, expected);
         Ok(())
     }
