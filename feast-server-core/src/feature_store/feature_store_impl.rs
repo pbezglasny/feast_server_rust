@@ -47,7 +47,7 @@ impl FeatureStore {
             for entity_key in feature.entity_keys.iter() {
                 features
                     .entry(HashEntityKey(entity_key.clone()))
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(feature.feature.clone());
             }
         }

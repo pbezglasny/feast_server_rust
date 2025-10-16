@@ -115,7 +115,7 @@ impl OnlineStore for SqliteOnlineStore {
                     .push(feature.feature_name.clone());
             }
 
-            for feature in feature_list.into_iter() {
+            for feature in feature_list {
                 let serialized_key =
                     serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
                 view_to_keys

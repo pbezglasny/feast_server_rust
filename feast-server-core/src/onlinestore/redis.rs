@@ -25,6 +25,14 @@ pub struct RedisOnlineStore {
     connection_pool: ConnectionManager,
 }
 
+fn add_redis_prefix_to_connection_string(connection_string: &str) -> String {
+    if connection_string.starts_with("redis://") || connection_string.starts_with("rediss://") {
+        connection_string.to_string()
+    } else {
+        format!("redis://{}", connection_string)
+    }
+}
+
 impl RedisOnlineStore {
     async fn new(project: String, connection_pool: ConnectionManager) -> Result<Self> {
         Ok(Self {
@@ -37,8 +45,10 @@ impl RedisOnlineStore {
         match config {
             OnlineStoreConfig::Redis { connection_string } => {
                 let connection_pool = ConnectionManager::new(
-                    redis::Client::open(connection_string.as_str())
-                        .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
+                    redis::Client::open(
+                        add_redis_prefix_to_connection_string(&connection_string).as_str(),
+                    )
+                    .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
                 )
                 .await?;
                 Ok(Self {
@@ -129,7 +139,7 @@ impl OnlineStore for RedisOnlineStore {
                         feature_view_name: &feature.feature_view_name,
                     });
                 }
-                feature_keys.push(feature_redis_key(&feature)?);
+                feature_keys.push(feature_redis_key(feature)?);
                 entities.push(RedisRequest::FeatureRow {
                     feature_view_name: &feature.feature_view_name,
                     entity_key: key,
