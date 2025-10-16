@@ -40,7 +40,6 @@ impl FeatureStore {
         let features_with_keys: Vec<FeatureWithKeys> =
             feature_views_to_keys(&feature_to_view, &request.entities)?;
 
-        // features: Arc<HashMap<EntityKey, Vec<Feature>>>,
         let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
 
         for feature in features_with_keys.iter() {
