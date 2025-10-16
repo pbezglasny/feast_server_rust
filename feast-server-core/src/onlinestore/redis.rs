@@ -114,9 +114,9 @@ impl OnlineStore for RedisOnlineStore {
             pipeline.cmd("HMGET").arg(hset_entity_key).arg(feature_keys);
         }
 
-        let connection = &mut self.connection_pool.clone();
+        let mut connection = self.connection_pool.clone();
 
-        let results: Vec<Vec<Option<Vec<u8>>>> = pipeline.query_async(connection).await?;
+        let results: Vec<Vec<Option<Vec<u8>>>> = pipeline.query_async(&mut connection).await?;
         let result_count: usize = results.iter().map(|v| v.len()).sum();
         if result_count != entities.len() {
             return Err(anyhow!(

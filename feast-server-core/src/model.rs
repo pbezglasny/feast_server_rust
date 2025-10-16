@@ -239,9 +239,11 @@ pub enum RequestedFeatures {
 }
 
 /// Implement custom hashing for EntityKey to support using it as a key in HashMap,
-/// skipping unsupported value types.
 struct HashValue<'a>(&'a Value);
 
+/// Added hashing for float and double values by hashing their bit representation as workaround
+/// to avoid panic
+/// Supposed that entity keys won't contain float or double values
 impl<'a> Hash for HashValue<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match &self.0.val {
@@ -269,11 +271,54 @@ impl<'a> Hash for HashValue<'a> {
                     8u8.hash(state);
                     ts.hash(state);
                 }
-                other => {
-                    panic!(
-                        "Unsupported value variant for hashing and entity key: {:?}",
-                        other
-                    );
+                Val::BoolVal(b) => {
+                    7u8.hash(state);
+                    b.hash(state);
+                }
+                Val::FloatVal(f) => {
+                    9u8.hash(state);
+                    f.to_bits().hash(state);
+                }
+                Val::DoubleVal(d) => {
+                    10u8.hash(state);
+                    d.to_bits().hash(state);
+                }
+
+                Val::BytesListVal(lv) => {
+                    11u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::StringListVal(lv) => {
+                    12u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::Int32ListVal(lv) => {
+                    13u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::Int64ListVal(lv) => {
+                    14u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::DoubleListVal(lv) => {
+                    15u8.hash(state);
+                    lv.val.iter().for_each(|d| d.to_bits().hash(state));
+                }
+                Val::FloatListVal(lv) => {
+                    16u8.hash(state);
+                    lv.val.iter().for_each(|f| f.to_bits().hash(state));
+                }
+                Val::BoolListVal(lv) => {
+                    17u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::UnixTimestampListVal(lv) => {
+                    18u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::NullVal(n) => {
+                    19u8.hash(state);
+                    n.hash(state);
                 }
             },
         }
