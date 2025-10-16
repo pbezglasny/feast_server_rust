@@ -122,7 +122,7 @@ impl OnlineStore for RedisOnlineStore {
             return Err(anyhow!(
                 "Mismatched number of results: expected {}, got {}",
                 entities.len(),
-                results.len()
+                result_count
             ));
         }
         let mut result_rows: Vec<OnlineStoreRow> = vec![];
