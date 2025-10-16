@@ -7,7 +7,7 @@ use crate::model::{
     GetOnlineFeatureResponse, TypedFeature, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
-use anyhow::{Error, Result, anyhow};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
 
@@ -63,7 +63,7 @@ impl GetOnlineFeatureResponse {
             let EntityKey {
                 mut join_keys,
                 mut entity_values,
-            } = deserialize_key(entity_key, EntityKeySerializationVersion::V3)?;
+            } = entity_key.0;
             if join_keys.len() != 1 {
                 return Err(anyhow!("Len of key is greater than 1"));
             }
@@ -84,10 +84,9 @@ impl GetOnlineFeatureResponse {
                 .insert(feature.clone());
             let mut entity_key_entry = feature_values.entry(key_name).or_default();
             let mut entry_values = entity_key_entry.entry(key_value).or_default();
-            let value_wrapper = ValueWrapper::from_bytes(&value)?;
             let feature_view_opt = feature_views.get(&feature.feature_view_name);
             let status: FeatureStatus = {
-                if value_wrapper.0.val.is_none() {
+                if value.val.is_none() {
                     FeatureStatus::NullValue
                 } else if let Some(feature_view) = feature_view_opt {
                     if let Some(expiration_time) = event_ts.checked_add_signed(feature_view.ttl) {
@@ -103,13 +102,12 @@ impl GetOnlineFeatureResponse {
                     FeatureStatus::Present
                 }
             };
-            let value_proto = value_wrapper.0;
             if entity_less_features_set.contains(&feature) {
                 entity_less_features
-                    .push((feature, ResponseFeatureRow(value_proto, status, event_ts)));
+                    .push((feature, ResponseFeatureRow(value, status, row.event_ts)));
                 continue;
             }
-            entry_values.insert(feature, ResponseFeatureRow(value_proto, status, event_ts));
+            entry_values.insert(feature, ResponseFeatureRow(value, status, row.event_ts));
         }
 
         let mut alias_to_original_map: HashMap<String, Vec<String>> = feature_views
@@ -238,6 +236,7 @@ mod tests {
     use crate::feast::types::value::Val;
     use crate::feast::types::{EntityKey, Value};
     use crate::key_serialization::serialize_key;
+    use crate::model::HashEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
     use prost::Message;
@@ -255,23 +254,19 @@ mod tests {
         let feature_value = Value {
             val: Some(Val::Int64Val(42)),
         };
-        let entity_key_bytes = serialize_key(
-            &EntityKey {
-                join_keys: vec!["driver_id".to_string()],
-                entity_values: vec![Value {
-                    val: Some(Val::Int64Val(1001)),
-                }],
-            },
-            EntityKeySerializationVersion::V3,
-        )?;
-
+        let entity_key = EntityKey {
+            join_keys: vec!["driver_id".to_string()],
+            entity_values: vec![Value {
+                val: Some(Val::Int64Val(1001)),
+            }],
+        };
         let row = OnlineStoreRow {
             feature_view_name: "driver_hourly_stats".to_string(),
-            entity_key: entity_key_bytes,
+            entity_key: HashEntityKey(entity_key),
             feature_name: "acc_rate".to_string(),
-            value: feature_value.encode_to_vec(),
+            value: feature_value.clone(),
             event_ts,
-            created_ts: event_ts,
+            created_ts: None,
         };
 
         let mut feature_view = FeatureView::default();

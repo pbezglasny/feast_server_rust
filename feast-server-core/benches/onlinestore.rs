@@ -1,4 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
+use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 #[path = "common.rs"]
@@ -7,6 +8,7 @@ mod common;
 use common::online_store;
 use feast_server_core::feast::types::value::Val;
 use feast_server_core::feast::types::{EntityKey, Value};
+use feast_server_core::model::{Feature, HashEntityKey};
 
 fn build_entity_keys() -> Vec<EntityKey> {
     [1005_i64, 1002, 2003]
@@ -28,15 +30,26 @@ fn bench_onlinestore(c: &mut Criterion) {
     let entity_keys = build_entity_keys();
     let feature_names = vec!["conv_rate".to_string(), "acc_rate".to_string()];
 
+    let arg: HashMap<HashEntityKey, Vec<Feature>> = entity_keys
+        .into_iter()
+        .map(|key| {
+            (
+                HashEntityKey(key),
+                feature_names
+                    .iter()
+                    .map(|feature| Feature::new("driver_hourly_stats".to_string(), feature.clone()))
+                    .collect(),
+            )
+        })
+        .collect();
+
     c.bench_function("onlinestore_get_feature_values", |b| {
         b.to_async(&runtime).iter(|| {
+            let arg = arg.clone();
             let store = store.clone();
-            let entity_keys = entity_keys.clone();
-            let feature_names = feature_names.clone();
             async move {
-                let feature_refs: Vec<&str> = feature_names.iter().map(|s| s.as_str()).collect();
                 let result = store
-                    .get_feature_values("driver_hourly_stats", &entity_keys, &feature_refs)
+                    .get_feature_values(arg)
                     .await
                     .expect("online store fetch failed");
                 criterion::black_box(result);

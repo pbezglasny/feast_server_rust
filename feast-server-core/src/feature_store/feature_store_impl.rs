@@ -2,7 +2,8 @@ use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityId, Feature, FeatureType, FeatureView,
-    FeatureWithKeys, GetOnlineFeatureRequest, GetOnlineFeatureResponse, TypedFeature,
+    FeatureWithKeys, GetOnlineFeatureRequest, GetOnlineFeatureResponse, HashEntityKey,
+    TypedFeature,
 };
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::registry::FeatureRegistryService;
@@ -38,6 +39,19 @@ impl FeatureStore {
 
         let features_with_keys: Vec<FeatureWithKeys> =
             feature_views_to_keys(&feature_to_view, &request.entities)?;
+
+        let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
+
+        for feature in features_with_keys.iter() {
+            for entity_key in feature.entity_keys.iter() {
+                features
+                    .entry(HashEntityKey(entity_key.clone()))
+                    .or_default()
+                    .push(feature.feature.clone());
+            }
+        }
+
+        let feature_rows = self.online_store.get_feature_values(features).await?;
 
         // feature view name to requested entity keys values
         let mut view_to_keys: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
@@ -78,54 +92,9 @@ impl FeatureStore {
             feature_list.push(TypedFeature::from(feature));
         }
 
-        for (requested_feature, fv) in feature_to_view.into_iter() {
-            view_features
-                .entry(requested_feature.feature_view_name.clone())
-                .or_default()
-                .push(requested_feature.feature_name.clone());
-            view_name_to_view.insert(fv.name.clone(), fv);
-        }
-
-        let mut join_set = JoinSet::new();
-        for (view_name, entity_keys) in view_to_keys.into_iter() {
-            let features = view_features.remove(&view_name).unwrap_or_default();
-            let online = Arc::clone(&self.online_store);
-
-            join_set.spawn(async move {
-                let entity_keys_arc = entity_keys;
-                let feature_refs: Vec<&str> = features.iter().map(|s| s.as_str()).collect();
-                online
-                    .get_feature_values(
-                        view_name.as_str(),
-                        entity_keys_arc.as_ref().as_slice(),
-                        &feature_refs,
-                    )
-                    .await
-            });
-        }
-
-        let mut feature_rows = Vec::new();
-        while let Some(res) = join_set.join_next().await {
-            match res {
-                Ok(val) => feature_rows.push(val),
-                Err(e) => return Err(anyhow!("Error joining online feature task: {:?}", e)),
-            }
-        }
-        let mut errors = vec![];
-        let clean_data: Vec<OnlineStoreRow> = feature_rows
-            .into_iter()
-            .filter_map(|r| r.map_err(|e| errors.push(e)).ok())
-            .flatten()
-            .collect();
-        if !errors.is_empty() {
-            return Err(anyhow!(
-                "error while getting online data, errors: {:?}",
-                errors
-            ));
-        }
         GetOnlineFeatureResponse::try_from(
             request.entities,
-            clean_data,
+            feature_rows,
             view_name_to_view,
             feature_list,
             request.full_feature_names.unwrap_or(false),

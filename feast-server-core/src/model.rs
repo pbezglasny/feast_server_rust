@@ -10,7 +10,7 @@ use crate::feast::types::value_type::Enum as ValueTypeEnum;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::util::prost_duration_to_duration;
 use crate::util::prost_timestamp_to_datetime;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use anyhow::{Error, anyhow};
 use chrono::{DateTime, Duration, Utc};
 use prost::Message;
@@ -81,13 +81,6 @@ pub enum FeatureStatus {
 
 #[derive(PartialEq, Clone)]
 pub struct ValueWrapper(pub Value);
-
-impl ValueWrapper {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let val = Value::decode(bytes)?;
-        Ok(Self(val))
-    }
-}
 
 impl From<EntityId> for ValueWrapper {
     fn from(value: EntityId) -> Self {
@@ -244,6 +237,109 @@ pub enum RequestedFeatures {
     FeatureNames(Vec<String>),
     FeatureService(String),
 }
+
+/// Implement custom hashing for EntityKey to support using it as a key in HashMap,
+struct HashValue<'a>(&'a Value);
+
+/// Added hashing for float and double values by hashing their bit representation as workaround
+/// to avoid panic
+/// Supposed that entity keys won't contain float or double values
+impl<'a> Hash for HashValue<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match &self.0.val {
+            None => {
+                0u8.hash(state);
+            }
+            Some(v) => match v {
+                Val::Int32Val(i) => {
+                    1u8.hash(state);
+                    i.hash(state);
+                }
+                Val::Int64Val(i) => {
+                    2u8.hash(state);
+                    i.hash(state);
+                }
+                Val::StringVal(s) => {
+                    5u8.hash(state);
+                    s.hash(state);
+                }
+                Val::BytesVal(b) => {
+                    6u8.hash(state);
+                    b.hash(state);
+                }
+                Val::UnixTimestampVal(ts) => {
+                    8u8.hash(state);
+                    ts.hash(state);
+                }
+                Val::BoolVal(b) => {
+                    7u8.hash(state);
+                    b.hash(state);
+                }
+                Val::FloatVal(f) => {
+                    9u8.hash(state);
+                    f.to_bits().hash(state);
+                }
+                Val::DoubleVal(d) => {
+                    10u8.hash(state);
+                    d.to_bits().hash(state);
+                }
+
+                Val::BytesListVal(lv) => {
+                    11u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::StringListVal(lv) => {
+                    12u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::Int32ListVal(lv) => {
+                    13u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::Int64ListVal(lv) => {
+                    14u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::DoubleListVal(lv) => {
+                    15u8.hash(state);
+                    lv.val.iter().for_each(|d| d.to_bits().hash(state));
+                }
+                Val::FloatListVal(lv) => {
+                    16u8.hash(state);
+                    lv.val.iter().for_each(|f| f.to_bits().hash(state));
+                }
+                Val::BoolListVal(lv) => {
+                    17u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::UnixTimestampListVal(lv) => {
+                    18u8.hash(state);
+                    lv.val.hash(state);
+                }
+                Val::NullVal(n) => {
+                    19u8.hash(state);
+                    n.hash(state);
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HashEntityKey(pub EntityKey);
+
+impl Hash for HashEntityKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for join_key in &self.0.join_keys {
+            join_key.hash(state);
+        }
+        for entity_value in &self.0.entity_values {
+            HashValue(entity_value).hash(state);
+        }
+    }
+}
+
+impl Eq for HashEntityKey {}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Feature {
