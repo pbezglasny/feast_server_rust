@@ -407,11 +407,18 @@ mod tests {
         .into_iter()
         .collect();
 
+        let lookup_mapping: HashMap<EntityColumnRef, String> = vec![(
+            EntityColumnRef::new("driver_hourly_stats".to_string(), "driver_id".to_string()),
+            "driver_id".to_string(),
+        )]
+        .into_iter()
+        .collect();
+
         let response = GetOnlineFeatureResponse::try_from(
             entity_keys,
             vec![row],
             feature_views,
-            &HashMap::new(),
+            &lookup_mapping,
             features,
             false,
         )?;
