@@ -45,7 +45,7 @@ struct ProcessedFeatures {
 fn process_rows(
     rows: Vec<OnlineStoreRow>,
     feature_views: &HashMap<String, FeatureView>,
-    feature_list: &[TypedFeature],
+    feature_list: Vec<TypedFeature>,
 ) -> Result<ProcessedFeatures> {
     // feature name to mapping where key is entity id value from request and values are
     // associated values for that feature
@@ -60,12 +60,9 @@ fn process_rows(
     let mut entity_less_features: Vec<(Feature, ResponseFeatureRow)> = vec![];
 
     let entity_less_features_set: HashSet<Feature> = feature_list
-        .iter()
+        .into_iter()
         .filter(|f| f.feature_type == FeatureType::EntityLess)
-        .map(|f| Feature {
-            feature_view_name: f.feature.feature_view_name.clone(),
-            feature_name: f.feature.feature_name.clone(),
-        })
+        .map(|f| f.feature)
         .collect();
 
     for row in rows.into_iter() {
@@ -152,7 +149,7 @@ impl GetOnlineFeatureResponse {
             mut entity_to_features,
             mut feature_values,
             entity_less_features,
-        } = process_rows(rows, &feature_views, &feature_list)?;
+        } = process_rows(rows, &feature_views, feature_list)?;
 
         let mut alias_to_original_map: HashMap<String, Vec<String>> = feature_views
             .into_iter()
