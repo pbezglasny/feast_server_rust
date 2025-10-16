@@ -166,15 +166,15 @@ impl GetOnlineFeatureResponse {
                 .unwrap_or_default();
             lookup_keys.push(entity_key_name.clone());
             for lookup_key in lookup_keys.into_iter() {
-                let entity_feature = Feature::entity_feature(lookup_key.clone());
+                let entity_feature = Feature::entity_feature(lookup_key);
                 if processed_features.contains(&entity_feature) {
                     continue;
                 }
-                processed_features.insert(entity_feature.clone());
-                let mut associated_values_map =
-                    feature_values.remove(&lookup_key).unwrap_or_default();
+                let mut associated_values_map = feature_values
+                    .remove(&entity_feature.feature_name)
+                    .unwrap_or_default();
                 let associated_features: HashSet<Feature> = entity_to_features
-                    .remove(&lookup_key)
+                    .remove(&entity_feature.feature_name)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|f| !processed_features.contains(f))
@@ -237,6 +237,7 @@ impl GetOnlineFeatureResponse {
                     result.metadata.feature_names.push(feature_name);
                     processed_features.insert(feature);
                 }
+                processed_features.insert(entity_feature);
             }
         }
         for (feature, ResponseFeatureRow(value, status, event_ts)) in entity_less_features {
