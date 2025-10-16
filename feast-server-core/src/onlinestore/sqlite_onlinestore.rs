@@ -125,10 +125,10 @@ impl OnlineStore for SqliteOnlineStore {
 
         let mut join_set: JoinSet<Result<Vec<OnlineStoreRow>>> = JoinSet::new();
         for (view_name, serialized_keys) in view_to_keys.into_iter() {
-            if serialized_keys.is_empty() {
+            let features = view_features.remove(&view_name).unwrap_or_default();
+            if serialized_keys.is_empty() || features.is_empty() {
                 continue;
             }
-            let features = view_features.remove(&view_name).unwrap_or_default();
 
             let mut connection = self.connection_pool.acquire().await?;
             let table_name = format!("{}_{}", self.project, view_name);
