@@ -44,9 +44,9 @@ impl FeatureStore {
         );
         // feature view name to feature view
         // todo remove clone
-        let mut view_name_to_view: HashMap<String, FeatureView> = feature_to_view
-            .iter()
-            .map(|(feature, view)| (feature.feature_name.clone(), view.clone()))
+        let view_name_to_view: HashMap<String, FeatureView> = feature_to_view
+            .values()
+            .map(|view| (view.name.clone(), view.clone()))
             .collect();
 
         let features_with_keys: Vec<FeatureWithKeys> =
