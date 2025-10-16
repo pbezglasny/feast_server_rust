@@ -238,6 +238,8 @@ pub enum RequestedFeatures {
     FeatureService(String),
 }
 
+/// Implement custom hashing for EntityKey to support using it as a key in HashMap,
+/// skipping unsupported value types.
 struct HashValue<'a>(&'a Value);
 
 impl<'a> Hash for HashValue<'a> {
@@ -255,15 +257,6 @@ impl<'a> Hash for HashValue<'a> {
                     2u8.hash(state);
                     i.hash(state);
                 }
-                Val::FloatVal(f) => {
-                    3u8.hash(state);
-                    // Hash the bits of the float to avoid issues with NaN and -0.0
-                    f.to_bits().hash(state);
-                }
-                Val::DoubleVal(d) => {
-                    4u8.hash(state);
-                    d.to_bits().hash(state);
-                }
                 Val::StringVal(s) => {
                     5u8.hash(state);
                     s.hash(state);
@@ -272,17 +265,15 @@ impl<'a> Hash for HashValue<'a> {
                     6u8.hash(state);
                     b.hash(state);
                 }
-                Val::BoolVal(b) => {
-                    7u8.hash(state);
-                    b.hash(state);
-                }
                 Val::UnixTimestampVal(ts) => {
                     8u8.hash(state);
                     ts.hash(state);
                 }
                 other => {
-                    // For unsupported types, we can choose to panic or handle it differently.
-                    panic!("Unsupported value variant for hashing: {:?}", other);
+                    panic!(
+                        "Unsupported value variant for hashing and entity key: {:?}",
+                        other
+                    );
                 }
             },
         }

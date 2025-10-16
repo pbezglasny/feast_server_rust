@@ -10,7 +10,7 @@ use chrono::{DateTime, Duration, Utc};
 use prost::Message;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::task::JoinSet;
 
 pub struct ConnectionOptions {
@@ -104,29 +104,30 @@ impl OnlineStore for SqliteOnlineStore {
         &self,
         features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
-        let mut view_to_keys: HashMap<String, Vec<Vec<u8>>> = HashMap::new();
-        let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
+        let mut view_to_keys: HashMap<String, HashSet<Vec<u8>>> = HashMap::new();
+        let mut view_features: HashMap<String, HashSet<String>> = HashMap::new();
 
         for (entity_key, feature_list) in features.iter() {
             for feature in feature_list {
                 view_features
                     .entry(feature.feature_view_name.clone())
                     .or_default()
-                    .push(feature.feature_name.clone());
-            }
+                    .insert(feature.feature_name.clone());
 
-            for feature in feature_list {
                 let serialized_key =
                     serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
                 view_to_keys
                     .entry(feature.feature_view_name.clone())
                     .or_default()
-                    .push(serialized_key);
+                    .insert(serialized_key);
             }
         }
 
         let mut join_set: JoinSet<Result<Vec<OnlineStoreRow>>> = JoinSet::new();
         for (view_name, serialized_keys) in view_to_keys.into_iter() {
+            if serialized_keys.is_empty() {
+                continue;
+            }
             let features = view_features.remove(&view_name).unwrap_or_default();
 
             let mut connection = self.connection_pool.acquire().await?;
@@ -245,6 +246,7 @@ mod test {
         let online_store: Box<dyn OnlineStore> = Box::new(sqlite_store);
         let result = online_store.get_feature_values(arg).await?;
         println!("{:?}", result);
+        assert_eq!(result.len(), 1);
         Ok(())
     }
 }

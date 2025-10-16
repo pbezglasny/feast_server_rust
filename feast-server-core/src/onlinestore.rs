@@ -50,7 +50,7 @@ pub async fn get_online_store(
             .map(|sqlite| Arc::new(sqlite) as Arc<dyn OnlineStore>)
         }
         OnlineStoreConfig::Redis { connection_string } => {
-            debug!("Create Redis online store",);
+            debug!("Create Redis online store");
             redis::RedisOnlineStore::from_connection_string(
                 project.to_owned(),
                 connection_string.clone(),

@@ -34,27 +34,10 @@ fn add_redis_prefix_to_connection_string(connection_string: &str) -> String {
 }
 
 impl RedisOnlineStore {
-    async fn new(project: String, connection_pool: ConnectionManager) -> Result<Self> {
-        Ok(Self {
-            project,
-            connection_pool,
-        })
-    }
-
     pub async fn from_config(project: String, config: OnlineStoreConfig) -> Result<Self> {
         match config {
             OnlineStoreConfig::Redis { connection_string } => {
-                let connection_pool = ConnectionManager::new(
-                    redis::Client::open(
-                        add_redis_prefix_to_connection_string(&connection_string).as_str(),
-                    )
-                    .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
-                )
-                .await?;
-                Ok(Self {
-                    project,
-                    connection_pool,
-                })
+                Self::from_connection_string(project, connection_string).await
             }
             _ => Err(anyhow!("Invalid config for RedisOnlineStore")),
         }
@@ -76,25 +59,6 @@ impl RedisOnlineStore {
     }
 }
 
-struct RedisDatetime(DateTime<Utc>);
-
-impl FromRedisValue for RedisDatetime {
-    fn from_redis_value(v: &RedisValue) -> RedisResult<Self> {
-        match v {
-            RedisValue::Int(ts) => {
-                let datetime = DateTime::from_timestamp(*ts, 0).ok_or_else(|| {
-                    redis::RedisError::from((ErrorKind::TypeError, "Invalid timestamp"))
-                })?;
-                Ok(RedisDatetime(datetime))
-            }
-            _ => Err(redis::RedisError::from((
-                ErrorKind::TypeError,
-                "Invalid value",
-            ))),
-        }
-    }
-}
-
 enum RedisRequest<'a> {
     FeatureRow {
         feature_view_name: &'a str,
@@ -111,7 +75,7 @@ enum RedisRequest<'a> {
 impl OnlineStore for RedisOnlineStore {
     async fn get_feature_values(
         &self,
-        mut features: HashMap<HashEntityKey, Vec<Feature>>,
+        features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut entities: Vec<RedisRequest> = vec![];
 
@@ -124,7 +88,7 @@ impl OnlineStore for RedisOnlineStore {
                 &key.0,
                 crate::config::EntityKeySerializationVersion::V3,
             )?;
-            hset_entity_key.append(&mut self.project.clone().as_bytes().to_vec());
+            hset_entity_key.extend_from_slice(self.project.as_bytes());
             for feature in feature_vec {
                 if !seen_views.contains(&feature.feature_view_name.as_ref()) {
                     seen_views.insert(feature.feature_view_name.as_ref());
@@ -153,11 +117,7 @@ impl OnlineStore for RedisOnlineStore {
         let connection = &mut self.connection_pool.clone();
 
         let results: Vec<Vec<Option<Vec<u8>>>> = pipeline.query_async(connection).await?;
-        let result_count = if results.is_empty() {
-            0
-        } else {
-            results.len() * results[0].len()
-        };
+        let result_count: usize = results.iter().map(|v| v.len()).sum();
         if result_count != entities.len() {
             return Err(anyhow!(
                 "Mismatched number of results: expected {}, got {}",
@@ -233,7 +193,17 @@ mod tests {
     use crate::model::{Feature, HashEntityKey};
     use crate::onlinestore::OnlineStore;
     use anyhow::Result;
+    use redis::aio::ConnectionManager;
     use std::collections::HashMap;
+
+    impl super::RedisOnlineStore {
+        async fn new(project: String, connection_pool: ConnectionManager) -> Result<Self> {
+            Ok(Self {
+                project,
+                connection_pool,
+            })
+        }
+    }
 
     #[tokio::test]
     #[ignore]
