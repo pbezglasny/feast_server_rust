@@ -71,7 +71,7 @@ impl CachedFileRegistry {
         bucket_url: String,
         cache_ttl_seconds: Option<u64>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
-        let (bucket, key) = parse_s3_url(&bucket_url)?;
+        let (bucket, key) = parse_storage_url(&bucket_url, "s3", "S3")?;
         let bucket = Arc::new(bucket);
         let key = Arc::new(key);
 
@@ -97,7 +97,7 @@ impl CachedFileRegistry {
         bucket_url: String,
         cache_ttl_seconds: Option<u64>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
-        let (bucket, object) = parse_gcs_url(&bucket_url)?;
+        let (bucket, object) = parse_storage_url(&bucket_url, "gs", "GCS")?;
         let bucket = Arc::new(bucket);
         let object = Arc::new(object);
 
@@ -157,36 +157,25 @@ async fn from_gcs(
     FileFeatureRegistry::from_proto(registry_proto)
 }
 
-fn parse_s3_url(s3_url: &str) -> Result<(String, String)> {
-    let url = url::Url::parse(s3_url)?;
-    if url.scheme() != "s3" {
-        return Err(anyhow::anyhow!("Invalid S3 URL scheme in '{}'", s3_url));
+fn parse_storage_url(url_str: &str, scheme: &str, provider_name: &str) -> Result<(String, String)> {
+    let url = url::Url::parse(url_str)?;
+    if url.scheme() != scheme {
+        return Err(anyhow::anyhow!(
+            "Invalid {} URL scheme in '{}'",
+            provider_name,
+            url_str
+        ));
     }
     let bucket = url
         .host_str()
         .ok_or(anyhow::anyhow!(
-            "Invalid S3 URL: could not determine host from '{}'",
-            s3_url
+            "Invalid {} URL: could not determine host from '{}'",
+            provider_name,
+            url_str
         ))?
         .to_string();
     let key = url.path().trim_start_matches('/').to_string();
     Ok((bucket, key))
-}
-
-fn parse_gcs_url(gcs_url: &str) -> Result<(String, String)> {
-    let url = url::Url::parse(gcs_url)?;
-    if url.scheme() != "gs" {
-        return Err(anyhow::anyhow!("Invalid GCS URL scheme in '{}'", gcs_url));
-    }
-    let bucket = url
-        .host_str()
-        .ok_or(anyhow::anyhow!(
-            "Invalid GCS URL: could not determine host from '{}'",
-            gcs_url
-        ))?
-        .to_string();
-    let object = url.path().trim_start_matches('/').to_string();
-    Ok((bucket, object))
 }
 
 fn start_refresh_task<F, Fut>(
