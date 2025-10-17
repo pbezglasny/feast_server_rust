@@ -37,18 +37,16 @@ impl RedisOnlineStore {
     pub async fn from_config(project: String, config: OnlineStoreConfig) -> Result<Self> {
         match config {
             OnlineStoreConfig::Redis { connection_string } => {
-                Self::from_connection_string(project, connection_string).await
+                Self::from_connection_string(project, &connection_string).await
             }
             _ => Err(anyhow!("Invalid config for RedisOnlineStore")),
         }
     }
 
-    pub async fn from_connection_string(
-        project: String,
-        connection_string: String,
-    ) -> Result<Self> {
+    pub async fn from_connection_string(project: String, connection_string: &str) -> Result<Self> {
+        let connection_info = add_redis_prefix_to_connection_string(connection_string);
         let connection_pool = ConnectionManager::new(
-            redis::Client::open(add_redis_prefix_to_connection_string(&connection_string).as_str())
+            redis::Client::open(connection_info.as_str())
                 .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
         )
         .await?;

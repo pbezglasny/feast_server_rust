@@ -1,7 +1,7 @@
 use crate::config::{Provider, RegistryConfig, RegistryType};
 use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -29,12 +29,13 @@ pub async fn get_registry(
                 let mut path_buf = PathBuf::new();
                 path_buf.push(path_prefix);
                 path_buf.push(conf.path.as_str());
-                let path = path_buf.into_os_string().into_string().unwrap();
+                let path = Arc::new(path_buf.into_os_string().into_string().unwrap());
                 if let Some(ttl) = conf.cache_ttl_seconds {
                     let producer_fn = {
+                        let path = Arc::clone(&path);
                         move || {
-                            let path = path.clone();
-                            async move { FileFeatureRegistry::from_path(&path) }
+                            let path = Arc::clone(&path);
+                            async move { FileFeatureRegistry::from_path(path.as_ref()) }
                         }
                     };
                     CachedFileRegistry::create_cached_registry_and_start_background_thread(
@@ -43,7 +44,7 @@ pub async fn get_registry(
                     )
                     .await
                 } else {
-                    let registry = FileFeatureRegistry::from_path(path.as_str())?;
+                    let registry = FileFeatureRegistry::from_path(path.as_ref())?;
                     Ok(Arc::new(registry))
                 }
             }

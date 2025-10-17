@@ -18,8 +18,8 @@ use feast_server_core::feast::types::{
 };
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{
-    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeatureRequest, GetOnlineFeatureResponse,
-    ValueWrapper,
+    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeatureRequest,
+    GetOnlineFeatureResponse, ValueWrapper,
 };
 use prost_types::Timestamp;
 use std::collections::HashMap;
@@ -368,7 +368,10 @@ mod tests {
         let entities = repeated_value_to_entity_ids("driver_id", repeated).unwrap();
         assert_eq!(
             entities,
-            vec![EntityIdValue::String("driver_1".to_string()), EntityIdValue::Int(42)]
+            vec![
+                EntityIdValue::String("driver_1".to_string()),
+                EntityIdValue::Int(42)
+            ]
         );
     }
 
