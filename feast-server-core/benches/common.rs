@@ -18,6 +18,7 @@ fn manifest_path(relative: &str) -> String {
 
 fn load_registry_proto() -> Result<FileFeatureRegistry> {
     let registry_path = manifest_path("test_data/registry.pb");
+    let registry_path = std::path::PathBuf::from(&registry_path);
     FileFeatureRegistry::from_path(&registry_path)
 }
 

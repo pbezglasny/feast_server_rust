@@ -4,6 +4,7 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
+use google_cloud_storage::client::{Client as GcsClient, ClientConfig};
 use prost::Message;
 use std::collections::HashMap;
 use std::ops::Add;
@@ -35,9 +36,25 @@ impl CachedFileRegistry {
         Ok(result)
     }
 
+    async fn create_registry<F, Fut>(
+        producer_fn: F,
+        ttl: Option<u64>,
+    ) -> Result<Arc<dyn FeatureRegistryService>>
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<FileFeatureRegistry>> + Send + 'static,
+    {
+        if let Some(ttl_val) = ttl {
+            Self::create_cached_registry_and_start_background_thread(producer_fn, ttl_val).await
+        } else {
+            let registry = producer_fn().await?;
+            Ok(Arc::new(registry))
+        }
+    }
+
     pub async fn new_local(
         path: PathBuf,
-        ttl: Option<u64>,
+        cache_ttl_seconds: Option<u64>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
         let path_arc = Arc::new(path);
         let producer_fn = {
@@ -47,12 +64,7 @@ impl CachedFileRegistry {
                 async move { FileFeatureRegistry::from_path(path.as_ref()) }
             }
         };
-        if let Some(ttl) = ttl {
-            Self::create_cached_registry_and_start_background_thread(producer_fn, ttl).await
-        } else {
-            let registry = FileFeatureRegistry::from_path(path_arc.as_ref())?;
-            Ok(Arc::new(registry))
-        }
+        Self::create_registry(producer_fn, cache_ttl_seconds).await
     }
 
     pub async fn new_s3(
@@ -78,12 +90,33 @@ impl CachedFileRegistry {
             }
         };
 
-        if let Some(ttl) = cache_ttl_seconds {
-            Self::create_cached_registry_and_start_background_thread(producer_fn, ttl).await
-        } else {
-            let registry = producer_fn().await?;
-            Ok(Arc::new(registry))
-        }
+        Self::create_registry(producer_fn, cache_ttl_seconds).await
+    }
+
+    pub async fn new_gcs(
+        bucket_url: String,
+        cache_ttl_seconds: Option<u64>,
+    ) -> Result<Arc<dyn FeatureRegistryService>> {
+        let (bucket, object) = parse_gcs_url(&bucket_url)?;
+        let bucket = Arc::new(bucket);
+        let object = Arc::new(object);
+
+        let client_config = ClientConfig::default().with_auth().await?;
+        let client = Arc::new(GcsClient::new(client_config));
+
+        let producer_fn = {
+            let client = Arc::clone(&client);
+            let bucket = Arc::clone(&bucket);
+            let object = Arc::clone(&object);
+            move || {
+                let client = Arc::clone(&client);
+                let bucket = Arc::clone(&bucket);
+                let object = Arc::clone(&object);
+                async move { from_gcs(client, bucket.as_str(), object.as_str()).await }
+            }
+        };
+
+        Self::create_registry(producer_fn, cache_ttl_seconds).await
     }
 }
 
@@ -103,17 +136,57 @@ async fn from_s3(
     FileFeatureRegistry::from_proto(registry_proto)
 }
 
+async fn from_gcs(
+    gcs_client: Arc<GcsClient>,
+    bucket: &str,
+    object: &str,
+) -> Result<FileFeatureRegistry> {
+    use google_cloud_storage::http::objects::download::Range;
+    use google_cloud_storage::http::objects::get::GetObjectRequest;
+
+    let request = GetObjectRequest {
+        bucket: bucket.to_string(),
+        object: object.to_string(),
+        ..Default::default()
+    };
+
+    let data = gcs_client
+        .download_object(&request, &Range::default())
+        .await?;
+    let registry_proto = crate::feast::core::Registry::decode(&*data)?;
+    FileFeatureRegistry::from_proto(registry_proto)
+}
+
 fn parse_s3_url(s3_url: &str) -> Result<(String, String)> {
     let url = url::Url::parse(s3_url)?;
     if url.scheme() != "s3" {
-        return Err(anyhow::anyhow!("Invalid S3 URL scheme"));
+        return Err(anyhow::anyhow!("Invalid S3 URL scheme in '{}'", s3_url));
     }
     let bucket = url
         .host_str()
-        .ok_or(anyhow::anyhow!("Invalid S3 URL"))?
+        .ok_or(anyhow::anyhow!(
+            "Invalid S3 URL: could not determine host from '{}'",
+            s3_url
+        ))?
         .to_string();
     let key = url.path().trim_start_matches('/').to_string();
     Ok((bucket, key))
+}
+
+fn parse_gcs_url(gcs_url: &str) -> Result<(String, String)> {
+    let url = url::Url::parse(gcs_url)?;
+    if url.scheme() != "gs" {
+        return Err(anyhow::anyhow!("Invalid GCS URL scheme in '{}'", gcs_url));
+    }
+    let bucket = url
+        .host_str()
+        .ok_or(anyhow::anyhow!(
+            "Invalid GCS URL: could not determine host from '{}'",
+            gcs_url
+        ))?
+        .to_string();
+    let object = url.path().trim_start_matches('/').to_string();
+    Ok((bucket, object))
 }
 
 fn start_refresh_task<F, Fut>(
@@ -168,11 +241,23 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn read_registry_from_s3() -> anyhow::Result<()> {
-        let buket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
-        let s3_registry = super::CachedFileRegistry::new_s3(buket_url, None).await?;
+        let bucket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
+        let s3_registry = super::CachedFileRegistry::new_s3(bucket_url, None).await?;
         let mut request_obj = GetOnlineFeatureRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = s3_registry.request_to_view_keys(&request_obj).await?;
+        println!("{:#?}", result);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn read_registry_from_gcs() -> anyhow::Result<()> {
+        let bucket_url = "gs://feast-rust-feature-registry/registry.db".to_string();
+        let gcs_registry = super::CachedFileRegistry::new_gcs(bucket_url, None).await?;
+        let mut request_obj = GetOnlineFeatureRequest::default();
+        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
+        let result = gcs_registry.request_to_view_keys(&request_obj).await?;
         println!("{:#?}", result);
         Ok(())
     }

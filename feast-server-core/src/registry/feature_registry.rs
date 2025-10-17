@@ -39,6 +39,12 @@ pub async fn get_registry(
                         .await?;
                 Ok(registry)
             }
+            Provider::GCP => {
+                let registry =
+                    CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds.clone())
+                        .await?;
+                Ok(registry)
+            }
             _ => Err(anyhow!("Unsupported provider for file registry")),
         },
         _ => Err(anyhow::anyhow!("Only file registry is supported now")),
