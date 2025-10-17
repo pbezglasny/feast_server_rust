@@ -4,6 +4,7 @@ use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::log::info;
 
 fn get_provider(provider_opt: Option<Provider>, path: &str) -> Provider {
     if let Some(provider) = provider_opt {
@@ -29,17 +30,29 @@ pub async fn get_registry(
                 let mut path_buf = PathBuf::new();
                 path_buf.push(path_prefix);
                 path_buf.push(conf.path.as_str());
+                info!(
+                    "Using local feature registry from path {}",
+                    path_buf.display()
+                );
                 let registry =
                     CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds.clone()).await?;
                 Ok(registry)
             }
             Provider::AWS => {
+                info!(
+                    "Using AWS feature registry from path {}",
+                    conf.path.as_str()
+                );
                 let registry =
                     CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds.clone())
                         .await?;
                 Ok(registry)
             }
             Provider::GCP => {
+                info!(
+                    "Using GCP feature registry from path {}",
+                    conf.path.as_str()
+                );
                 let registry =
                     CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds.clone())
                         .await?;

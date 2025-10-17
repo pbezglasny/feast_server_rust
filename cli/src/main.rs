@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
                 ));
             }
             if let Some(Provider::Unknown(other)) = repo_config.provider {
-                return Err(anyhow!("Unsupported provider: {}", other));
+                return Err(anyhow!("Unsupported provider: {}, available providers: [local, aws, gcp]", other));
             }
             let tls_enabled = key.is_some() && cert.is_some();
             let registry = feast_server_core::registry::get_registry(
