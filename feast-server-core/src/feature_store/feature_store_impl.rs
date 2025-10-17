@@ -2,7 +2,7 @@ use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
-    FeatureWithKeys, GetOnlineFeaturesRequest, GetOnlineFeatureResponse, HashEntityKey,
+    FeatureWithKeys, GetOnlineFeatureResponse, GetOnlineFeaturesRequest, HashEntityKey,
 };
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
