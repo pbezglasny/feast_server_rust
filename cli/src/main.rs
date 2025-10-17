@@ -71,7 +71,10 @@ async fn main() -> Result<()> {
                 ));
             }
             if let Some(Provider::Unknown(other)) = repo_config.provider {
-                return Err(anyhow!("Unsupported provider: {}, available providers: [local, aws, gcp]", other));
+                return Err(anyhow!(
+                    "Unsupported provider: {}, available providers: [local, aws, gcp]",
+                    other
+                ));
             }
             let tls_enabled = key.is_some() && cert.is_some();
             let registry = feast_server_core::registry::get_registry(
@@ -116,7 +119,45 @@ async fn main() -> Result<()> {
                     }
                 }
                 cli_options::ServeType::Grpc => {
-                    return Err(anyhow!("Grpc server is not implemented yet"));
+                    if metrics_enabled {
+                        tracing::warn!(
+                            "Metrics server is only available for HTTP; ignoring flag for gRPC"
+                        );
+                    }
+                    let server_config = grpc_server::server::ServerConfig {
+                        host,
+                        port,
+                        tls_enabled,
+                        tls_cert_path: cert,
+                        tls_key_path: key,
+                    };
+                    #[cfg(unix)]
+                    {
+                        let mut sigterm =
+                            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+                        tokio::select! {
+                            res = grpc_server::server::start_server(server_config, feature_store) => {
+                                res?
+                            }
+                            _ = sigterm.recv() => {
+                                tracing::info!("Received SIGTERM, shutting down...");
+                            }
+                            _ = tokio::signal::ctrl_c() => {
+                                tracing::info!("Received Ctrl+C, shutting down...");
+                            }
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        tokio::select! {
+                            res = grpc_server::server::start_server(server_config, feature_store) => {
+                                res?
+                            }
+                            _ = tokio::signal::ctrl_c() => {
+                                tracing::info!("Received Ctrl+C, shutting down...");
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 feast-server-core = { path = "../feast-server-core" }
 rest-server = { path = "../rest-server" }
+grpc-server = { path = "../grpc-server" }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 saphyr = { workspace = true }

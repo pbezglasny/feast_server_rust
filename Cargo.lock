@@ -1016,6 +1016,7 @@ dependencies = [
  "axum-server",
  "clap",
  "feast-server-core",
+ "grpc-server",
  "rest-server",
  "saphyr",
  "tokio",
