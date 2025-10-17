@@ -4,8 +4,10 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
+use prost::Message;
 use std::collections::HashMap;
 use std::ops::Add;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct CachedFileRegistry {
@@ -15,7 +17,7 @@ pub struct CachedFileRegistry {
 }
 
 impl CachedFileRegistry {
-    pub async fn create_cached_registry_and_start_background_thread<F, Fut>(
+    async fn create_cached_registry_and_start_background_thread<F, Fut>(
         feature_registry_fn: F,
         ttl: u64,
     ) -> Result<Arc<dyn FeatureRegistryService>>
@@ -32,6 +34,86 @@ impl CachedFileRegistry {
         start_refresh_task(result.clone(), feature_registry_fn, ttl);
         Ok(result)
     }
+
+    pub async fn new_local(
+        path: PathBuf,
+        ttl: Option<u64>,
+    ) -> Result<Arc<dyn FeatureRegistryService>> {
+        let path_arc = Arc::new(path);
+        let producer_fn = {
+            let path = Arc::clone(&path_arc);
+            move || {
+                let path = Arc::clone(&path);
+                async move { FileFeatureRegistry::from_path(path.as_ref()) }
+            }
+        };
+        if let Some(ttl) = ttl {
+            Self::create_cached_registry_and_start_background_thread(producer_fn, ttl).await
+        } else {
+            let registry = FileFeatureRegistry::from_path(path_arc.as_ref())?;
+            Ok(Arc::new(registry))
+        }
+    }
+
+    pub async fn new_s3(
+        bucket_url: String,
+        cache_ttl_seconds: Option<u64>,
+    ) -> Result<Arc<dyn FeatureRegistryService>> {
+        let (bucket, key) = parse_s3_url(&bucket_url)?;
+        let bucket = Arc::new(bucket);
+        let key = Arc::new(key);
+
+        let config = aws_config::load_from_env().await;
+        let client = Arc::new(aws_sdk_s3::Client::new(&config));
+
+        let producer_fn = {
+            let client = Arc::clone(&client);
+            let bucket = Arc::clone(&bucket);
+            let key = Arc::clone(&key);
+            move || {
+                let client = Arc::clone(&client);
+                let bucket = Arc::clone(&bucket);
+                let key = Arc::clone(&key);
+                async move { from_s3(client, bucket.as_str(), key.as_str()).await }
+            }
+        };
+
+        if let Some(ttl) = cache_ttl_seconds {
+            Self::create_cached_registry_and_start_background_thread(producer_fn, ttl).await
+        } else {
+            let registry = producer_fn().await?;
+            Ok(Arc::new(registry))
+        }
+    }
+}
+
+async fn from_s3(
+    s3_client: Arc<aws_sdk_s3::Client>,
+    bucket: &str,
+    key: &str,
+) -> Result<FileFeatureRegistry> {
+    let proto_file = s3_client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await?;
+    let data = proto_file.body.collect().await?.into_bytes();
+    let registry_proto = crate::feast::core::Registry::decode(&*data)?;
+    FileFeatureRegistry::from_proto(registry_proto)
+}
+
+fn parse_s3_url(s3_url: &str) -> Result<(String, String)> {
+    let url = url::Url::parse(s3_url)?;
+    if url.scheme() != "s3" {
+        return Err(anyhow::anyhow!("Invalid S3 URL scheme"));
+    }
+    let bucket = url
+        .host_str()
+        .ok_or(anyhow::anyhow!("Invalid S3 URL"))?
+        .to_string();
+    let key = url.path().trim_start_matches('/').to_string();
+    Ok((bucket, key))
 }
 
 fn start_refresh_task<F, Fut>(
@@ -76,5 +158,22 @@ impl FeatureRegistryService for CachedFileRegistry {
         }
         let registry = self.inner.load();
         registry.request_to_view_keys(request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::GetOnlineFeatureRequest;
+
+    #[tokio::test]
+    #[ignore]
+    async fn read_registry_from_s3() -> anyhow::Result<()> {
+        let buket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
+        let s3_registry = super::CachedFileRegistry::new_s3(buket_url, None).await?;
+        let mut request_obj = GetOnlineFeatureRequest::default();
+        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
+        let result = s3_registry.request_to_view_keys(&request_obj).await?;
+        println!("{:#?}", result);
+        Ok(())
     }
 }

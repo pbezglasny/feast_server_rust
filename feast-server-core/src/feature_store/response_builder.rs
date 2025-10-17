@@ -245,7 +245,7 @@ impl GetOnlineFeatureResponseBuilder {
     fn add_missing_features(mut self, features: &[Feature]) -> Self {
         for feature in features {
             let feature_name = if self.full_feature_names {
-                format!("{}.{}", feature.feature_view_name, feature.feature_name)
+                format!("{}__{}", feature.feature_view_name, feature.feature_name)
             } else {
                 feature.feature_name.clone()
             };
@@ -266,7 +266,7 @@ impl GetOnlineFeatureResponseBuilder {
         }
         for row in rows {
             let feature_name = if self.full_feature_names {
-                format!("{}.{}", row.0.feature_view_name, row.0.feature_name)
+                format!("{}__{}", row.0.feature_view_name, row.0.feature_name)
             } else {
                 row.0.feature_name.clone()
             };

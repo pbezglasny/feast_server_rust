@@ -29,24 +29,15 @@ pub async fn get_registry(
                 let mut path_buf = PathBuf::new();
                 path_buf.push(path_prefix);
                 path_buf.push(conf.path.as_str());
-                let path = Arc::new(path_buf.into_os_string().into_string().unwrap());
-                if let Some(ttl) = conf.cache_ttl_seconds {
-                    let producer_fn = {
-                        let path = Arc::clone(&path);
-                        move || {
-                            let path = Arc::clone(&path);
-                            async move { FileFeatureRegistry::from_path(path.as_ref()) }
-                        }
-                    };
-                    CachedFileRegistry::create_cached_registry_and_start_background_thread(
-                        producer_fn,
-                        ttl,
-                    )
-                    .await
-                } else {
-                    let registry = FileFeatureRegistry::from_path(path.as_ref())?;
-                    Ok(Arc::new(registry))
-                }
+                let registry =
+                    CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds.clone()).await?;
+                Ok(registry)
+            }
+            Provider::AWS => {
+                let registry =
+                    CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds.clone())
+                        .await?;
+                Ok(registry)
             }
             _ => Err(anyhow!("Unsupported provider for file registry")),
         },

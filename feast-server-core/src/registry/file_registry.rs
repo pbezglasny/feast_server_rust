@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct FileFeatureRegistry {
     registry: FeatureRegistry,
@@ -24,23 +24,29 @@ impl FileFeatureRegistry {
         Ok(Self { registry })
     }
 
-    pub fn from_path(registry_file_path: &str) -> Result<Self> {
-        let path = Path::new(registry_file_path);
-        let mut file = fs::File::open(path).map_err(|err| {
+    pub fn from_path(registry_file_path: &PathBuf) -> Result<Self> {
+        let mut file = fs::File::open(registry_file_path).map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
                 anyhow!(
                     "Registry file not found at '{}'. Check your repository configuration (e.g. FEATURE_REPO_DIR or --chdir).",
-                    path.display()
+                    registry_file_path.display()
                 )
             } else {
-                anyhow::Error::new(err).context(format!("Failed to open registry file at '{}'", path.display()))
+                anyhow::Error::new(err).context(format!("Failed to open registry file at '{}'", registry_file_path.display()))
             }
         })?;
         let mut buf = Vec::new();
-        file.read_to_end(&mut buf)
-            .with_context(|| format!("Failed to read registry file at '{}'", path.display()))?;
+        file.read_to_end(&mut buf).with_context(|| {
+            format!(
+                "Failed to read registry file at '{}'",
+                registry_file_path.display()
+            )
+        })?;
         let registry_proto = Registry::decode(&*buf).with_context(|| {
-            format!("Failed to parse registry protobuf at '{}'", path.display())
+            format!(
+                "Failed to parse registry protobuf at '{}'",
+                registry_file_path.display()
+            )
         })?;
         let registry = FeatureRegistry::try_from(registry_proto)?;
         Ok(Self { registry })
@@ -178,7 +184,8 @@ mod tests {
     fn create_feature_registry() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry = FileFeatureRegistry::from_path(&registry_file)?;
+        let registry_path = std::path::PathBuf::from(&registry_file);
+        let feature_registry = FileFeatureRegistry::from_path(&registry_path)?;
         let requested_features = vec![Feature {
             feature_view_name: "driver_hourly_stats_fresh".to_string(),
             feature_name: "conv_rate".to_string(),
@@ -192,8 +199,8 @@ mod tests {
     async fn get_features_by_name() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-
-        let feature_registry_proto = FileFeatureRegistry::from_path(&registry_file)?;
+        let registry_path = std::path::PathBuf::from(registry_file);
+        let feature_registry_proto = FileFeatureRegistry::from_path(&registry_path)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
@@ -208,7 +215,8 @@ mod tests {
     async fn get_features_by_service() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry_proto = FileFeatureRegistry::from_path(&registry_file)?;
+        let registry_path = std::path::PathBuf::from(registry_file);
+        let feature_registry_proto = FileFeatureRegistry::from_path(&registry_path)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeatureRequest::default();
