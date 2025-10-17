@@ -50,7 +50,7 @@ impl EntityIdValue {
                 value_type::Enum::String => Ok(Value {
                     val: Some(Val::StringVal(i.to_string())),
                 }),
-                _ => Err(anyhow!("Unsupported type convertion for number type")),
+                _ => Err(anyhow!("Unsupported type conversion for number type")),
             },
         }
     }

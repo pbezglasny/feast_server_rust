@@ -56,7 +56,7 @@ impl TryFrom<Val> for EntityIdValue {
             Val::Int32Val(v) => Ok(EntityIdValue::Int(v as i64)),
             Val::Int64Val(v) => Ok(EntityIdValue::Int(v)),
             Val::StringVal(v) => Ok(EntityIdValue::String(v)),
-            other => Err(anyhow!("Unsupported type convertion")),
+            other => Err(anyhow!("Unsupported type conversion")),
         }
     }
 }
