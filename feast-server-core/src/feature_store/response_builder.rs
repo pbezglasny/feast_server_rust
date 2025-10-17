@@ -283,6 +283,7 @@ impl GetOnlineFeatureResponseBuilder {
 
     fn next_entity(mut self) -> Self {
         self.current_entity_idx = self.next_feature_idx;
+        self.next_feature_idx += 1;
         self.current_feature_value_idx = 0;
         self
     }
