@@ -54,11 +54,11 @@ pub struct RequestEntityIdKey {
     pub value: EntityIdValue,
 }
 
-fn val_to_entity_id_value(value: Val) -> Result<EntityIdValue> {
+fn val_to_entity_id_value(value: &Val) -> Result<EntityIdValue> {
     match value {
-        Val::Int32Val(i) => Ok(EntityIdValue::Int(i as i64)),
-        Val::Int64Val(i) => Ok(EntityIdValue::Int(i)),
-        Val::StringVal(s) => Ok(EntityIdValue::String(s)),
+        Val::Int32Val(i) => Ok(EntityIdValue::Int(*i as i64)),
+        Val::Int64Val(i) => Ok(EntityIdValue::Int(*i)),
+        Val::StringVal(s) => Ok(EntityIdValue::String(s.clone())),
         other => Err(anyhow!("Unsupported entity value type: {:?}", other)),
     }
 }
@@ -99,7 +99,7 @@ fn group_rows(
         let entity_id_value = entity_key.0.entity_values[0]
             .val
             .as_ref()
-            .map(|v| val_to_entity_id_value(v.clone()))
+            .map(val_to_entity_id_value)
             .transpose()?
             .ok_or(anyhow!("Empty entity id value"))?;
         let request_entity_key = RequestEntityIdKey {
@@ -331,8 +331,8 @@ impl GetOnlineFeatureResponse {
                     name: entity_key_name.clone(),
                     value: key.clone(),
                 };
-                response_builder = response_builder.add_entity_value(key.clone());
                 let feature_values = grouped_rows.remove(&request_entity_key).unwrap_or_default();
+                response_builder = response_builder.add_entity_value(key);
                 for response_row in feature_values {
                     let ResponseFeatureRow(feature, value, status, event_ts) = response_row;
                     feature_set.remove(&feature);

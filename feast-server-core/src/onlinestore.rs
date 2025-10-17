@@ -54,12 +54,9 @@ pub async fn get_online_store(
         }
         OnlineStoreConfig::Redis { connection_string } => {
             debug!("Create Redis online store");
-            redis::RedisOnlineStore::from_connection_string(
-                project.to_owned(),
-                connection_string.clone(),
-            )
-            .await
-            .map(|redis| Arc::new(redis) as Arc<dyn OnlineStore>)
+            redis::RedisOnlineStore::from_connection_string(project.to_owned(), connection_string)
+                .await
+                .map(|redis| Arc::new(redis) as Arc<dyn OnlineStore>)
         }
         other => Err(anyhow!("Unsupported online store type: {:?}", other)),
     }

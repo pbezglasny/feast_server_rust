@@ -5,7 +5,7 @@ use crate::model::{
     RequestedFeatures,
 };
 use crate::registry::FeatureRegistryService;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use prost::Message;
 use std::collections::HashMap;
@@ -170,8 +170,8 @@ impl FeatureRegistryService for FileFeatureRegistry {
 #[cfg(test)]
 mod tests {
     use crate::model::{Feature, GetOnlineFeatureRequest};
-    use crate::registry::file_registry::FileFeatureRegistry;
     use crate::registry::FeatureRegistryService;
+    use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
 
     #[test]

@@ -2,7 +2,9 @@ use std::fmt::{self, Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeastCoreError {
-    FeatureServiceNotFound { name: String },
+    FeatureServiceNotFound {
+        name: String,
+    },
     FeatureViewNotFound {
         feature_view_name: String,
         service_name: Option<String>,
