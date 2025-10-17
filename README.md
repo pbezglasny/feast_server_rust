@@ -9,7 +9,7 @@ Rust implementation of the Feast feature server.
 - `cli`: command-line entrypoint that wires configuration, logging, and server startup.
 
 ## Prerequisites
-- Rust toolchain (stable) with `cargo` and `rustfmt`.
+- Rust toolchain (stable) with `cargo` and `rustfmt`. You can install it using [rustup](https://rustup.rs/).
 
 ## Run the HTTP Server
 1. Point the CLI at a feature repository. Either change into the repo directory or pass it explicitly:
