@@ -131,17 +131,31 @@ async fn main() -> Result<()> {
                         tls_cert_path: cert,
                         tls_key_path: key,
                     };
-                    let mut sigterm =
-                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-                    tokio::select! {
-                        res = grpc_server::server::start_server(server_config, feature_store) => {
-                            res?
+                    #[cfg(unix)]
+                    {
+                        let mut sigterm =
+                            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+                        tokio::select! {
+                            res = grpc_server::server::start_server(server_config, feature_store) => {
+                                res?
+                            }
+                            _ = sigterm.recv() => {
+                                tracing::info!("Received SIGTERM, shutting down...");
+                            }
+                            _ = tokio::signal::ctrl_c() => {
+                                tracing::info!("Received Ctrl+C, shutting down...");
+                            }
                         }
-                        _ = sigterm.recv() => {
-                            tracing::info!("Received SIGTERM, shutting down...");
-                        }
-                        _ = tokio::signal::ctrl_c() => {
-                            tracing::info!("Received Ctrl+C, shutting down...");
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        tokio::select! {
+                            res = grpc_server::server::start_server(server_config, feature_store) => {
+                                res?
+                            }
+                            _ = tokio::signal::ctrl_c() => {
+                                tracing::info!("Received Ctrl+C, shutting down...");
+                            }
                         }
                     }
                 }
