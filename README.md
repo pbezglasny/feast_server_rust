@@ -14,7 +14,7 @@ Rust implementation of the Feast feature server.
 ## Run the HTTP Server
 1. Point the CLI at a feature repository. Either change into the repo directory or pass it explicitly:
    ```bash
-   FEATURE_REPO_DIR_ENV_VAR=dev/careful_tomcat/feature_repo \
+   FEATURE_REPO_DIR_ENV_VAR=<path-to-your-feature-repo> \
    cargo run -p cli -- serve -n 0.0.0.0 -p 6566
    ```
    You can also use `--chdir <path>` or `--feature-store-yaml <file>` to override the repository root and `feature_store.yaml` filename.
