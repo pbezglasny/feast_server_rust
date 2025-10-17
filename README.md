@@ -24,7 +24,7 @@ Rust implementation of the Feast feature server.
    - `--type grpc` is accepted by the CLI, but the gRPC server is not implemented yet.
 
 When the server starts it exposes:
-- `POST /get-online-features` expecting a Feast `GetOnlineFeatureRequest` payload and returning the online feature vector.
+- `POST /get-online-features` expecting a Feast `GetOnlineFeaturesRequest` payload and returning the online feature vector.
 - `GET /health` for readiness checks (HTTP 200 on success).
 - `GET /metrics` when metrics are enabled.
 

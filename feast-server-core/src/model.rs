@@ -57,7 +57,7 @@ impl EntityIdValue {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct GetOnlineFeatureRequest {
+pub struct GetOnlineFeaturesRequest {
     pub entities: HashMap<String, Vec<EntityIdValue>>,
     pub feature_service: Option<String>,
     pub features: Option<Vec<String>>,
@@ -439,8 +439,8 @@ impl TryFrom<&str> for Feature {
     }
 }
 
-impl From<&GetOnlineFeatureRequest> for RequestedFeatures {
-    fn from(get_online_feature_request: &GetOnlineFeatureRequest) -> Self {
+impl From<&GetOnlineFeaturesRequest> for RequestedFeatures {
+    fn from(get_online_feature_request: &GetOnlineFeaturesRequest) -> Self {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
             RequestedFeatures::FeatureService(feature_service.clone())
         } else {

@@ -10,7 +10,7 @@ use axum_prometheus::PrometheusMetricLayer;
 use axum_server::tls_rustls::RustlsConfig;
 use feast_server_core::error::FeastCoreError;
 use feast_server_core::feature_store::FeatureStore;
-use feast_server_core::model::GetOnlineFeatureRequest;
+use feast_server_core::model::GetOnlineFeaturesRequest;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
@@ -135,7 +135,7 @@ pub async fn start_server(
 
 async fn handle_feature_request(
     State(server): State<FeastServer>,
-    payload: Result<Json<GetOnlineFeatureRequest>, JsonRejection>,
+    payload: Result<Json<GetOnlineFeaturesRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let Json(get_online_feature_request) = payload?;
 

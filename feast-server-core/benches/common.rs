@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 use feast_server_core::feature_store::FeatureStore;
-use feast_server_core::model::{EntityIdValue, GetOnlineFeatureRequest};
+use feast_server_core::model::{EntityIdValue, GetOnlineFeaturesRequest};
 use feast_server_core::onlinestore::OnlineStore;
 use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use feast_server_core::registry::FeatureRegistryService;
@@ -63,7 +63,7 @@ pub async fn feature_store() -> Result<Arc<FeatureStore>> {
         .map(Clone::clone)
 }
 
-pub fn sample_request() -> GetOnlineFeatureRequest {
+pub fn sample_request() -> GetOnlineFeaturesRequest {
     let entities = HashMap::from([(
         "driver_id".to_string(),
         vec![
@@ -72,7 +72,7 @@ pub fn sample_request() -> GetOnlineFeatureRequest {
             EntityIdValue::Int(2003),
         ],
     )]);
-    GetOnlineFeatureRequest {
+    GetOnlineFeaturesRequest {
         entities,
         feature_service: None,
         features: vec![

@@ -18,7 +18,7 @@ use feast_server_core::feast::types::{
 };
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{
-    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeatureRequest,
+    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeaturesRequest,
     GetOnlineFeatureResponse, ValueWrapper,
 };
 use prost_types::Timestamp;
@@ -46,7 +46,7 @@ impl FeastGrpcService {
 
     fn from_request_proto(
         request: GetOnlineFeaturesRequest,
-    ) -> Result<GetOnlineFeatureRequest, GrpcStatus> {
+    ) -> Result<GetOnlineFeaturesRequest, GrpcStatus> {
         let mut entities: HashMap<String, Vec<EntityIdValue>> = HashMap::new();
         for (entity_name, values) in request.entities {
             entities.insert(
@@ -65,7 +65,7 @@ impl FeastGrpcService {
             tracing::warn!("gRPC request context is currently ignored");
         }
 
-        Ok(GetOnlineFeatureRequest {
+        Ok(GetOnlineFeaturesRequest {
             entities,
             feature_service,
             features,
