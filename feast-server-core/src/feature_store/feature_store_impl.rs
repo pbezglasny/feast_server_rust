@@ -2,7 +2,7 @@ use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
-    FeatureWithKeys, GetOnlineFeatureRequest, GetOnlineFeatureResponse, HashEntityKey,
+    FeatureWithKeys, GetOnlineFeaturesRequest, GetOnlineFeatureResponse, HashEntityKey,
 };
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
@@ -29,7 +29,7 @@ impl FeatureStore {
 
     pub async fn get_online_features(
         &self,
-        request: GetOnlineFeatureRequest,
+        request: GetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeatureResponse> {
         let feature_to_view: HashMap<Feature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
@@ -243,7 +243,7 @@ fn feature_views_to_keys(
 mod tests {
     use super::*;
     use crate::feast::types::{value, value_type};
-    use crate::model::{EntityIdValue, Field, GetOnlineFeatureRequest};
+    use crate::model::{EntityIdValue, Field, GetOnlineFeaturesRequest};
     use chrono::Duration;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -503,7 +503,7 @@ mod tests {
                 EntityIdValue::Int(2003),
             ],
         )]);
-        let request = GetOnlineFeatureRequest {
+        let request = GetOnlineFeaturesRequest {
             entities,
             feature_service: None,
             features: Some(vec![
@@ -552,7 +552,7 @@ mod tests {
                 vec![EntityIdValue::Int(1002), EntityIdValue::Int(1005)],
             ),
         ]);
-        let request = GetOnlineFeatureRequest {
+        let request = GetOnlineFeaturesRequest {
             entities,
             feature_service: Some("driver_activity_alias".to_string()),
             features: None,

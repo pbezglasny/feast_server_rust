@@ -1,4 +1,4 @@
-use crate::model::{Feature, FeatureView, GetOnlineFeatureRequest};
+use crate::model::{Feature, FeatureView, GetOnlineFeaturesRequest};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use arc_swap::ArcSwap;
@@ -208,7 +208,7 @@ fn start_refresh_task<F, Fut>(
 impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
-        request: &GetOnlineFeatureRequest,
+        request: &GetOnlineFeaturesRequest,
     ) -> Result<HashMap<Feature, FeatureView>> {
         if self
             .created_at
@@ -225,14 +225,14 @@ impl FeatureRegistryService for CachedFileRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::GetOnlineFeatureRequest;
+    use crate::model::GetOnlineFeaturesRequest;
 
     #[tokio::test]
     #[ignore]
     async fn read_registry_from_s3() -> anyhow::Result<()> {
         let bucket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
         let s3_registry = super::CachedFileRegistry::new_s3(bucket_url, None).await?;
-        let mut request_obj = GetOnlineFeatureRequest::default();
+        let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = s3_registry.request_to_view_keys(&request_obj).await?;
         println!("{:#?}", result);
@@ -244,7 +244,7 @@ mod tests {
     async fn read_registry_from_gcs() -> anyhow::Result<()> {
         let bucket_url = "gs://feast-rust-feature-registry/registry.db".to_string();
         let gcs_registry = super::CachedFileRegistry::new_gcs(bucket_url, None).await?;
-        let mut request_obj = GetOnlineFeatureRequest::default();
+        let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = gcs_registry.request_to_view_keys(&request_obj).await?;
         println!("{:#?}", result);

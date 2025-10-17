@@ -1,7 +1,7 @@
 use crate::error::FeastCoreError;
 use crate::feast::core::Registry;
 use crate::model::{
-    Feature, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeatureRequest,
+    Feature, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest,
     RequestedFeatures,
 };
 use crate::registry::FeatureRegistryService;
@@ -166,7 +166,7 @@ impl FileFeatureRegistry {
 impl FeatureRegistryService for FileFeatureRegistry {
     async fn request_to_view_keys(
         &self,
-        request: &GetOnlineFeatureRequest,
+        request: &GetOnlineFeaturesRequest,
     ) -> Result<HashMap<Feature, FeatureView>> {
         let requested_features = RequestedFeatures::from(request);
         self.get_feature_views(requested_features)
@@ -175,7 +175,7 @@ impl FeatureRegistryService for FileFeatureRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Feature, GetOnlineFeatureRequest};
+    use crate::model::{Feature, GetOnlineFeaturesRequest};
     use crate::registry::FeatureRegistryService;
     use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
@@ -203,7 +203,7 @@ mod tests {
         let feature_registry_proto = FileFeatureRegistry::from_path(&registry_path)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
-        let mut request_obj = GetOnlineFeatureRequest::default();
+        let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
         let result = feature_registry_service
             .request_to_view_keys(&request_obj)
@@ -219,7 +219,7 @@ mod tests {
         let feature_registry_proto = FileFeatureRegistry::from_path(&registry_path)?;
         let feature_registry_service: Box<dyn FeatureRegistryService> =
             Box::new(feature_registry_proto);
-        let mut request_obj = GetOnlineFeatureRequest::default();
+        let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.feature_service = Some("driver_activity_v4".to_string());
         let result = feature_registry_service
             .request_to_view_keys(&request_obj)
