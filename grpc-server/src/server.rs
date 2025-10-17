@@ -1,8 +1,8 @@
 use crate::proto::feast::serving::serving_service_server::{ServingService, ServingServiceServer};
 use crate::proto::feast::serving::{
-    FeatureList, GetFeastServingInfoRequest, GetFeastServingInfoResponse, GetOnlineFeaturesRequest,
-    GetOnlineFeaturesResponse, GetOnlineFeaturesResponseMetadata, get_online_features_request,
-    get_online_features_response,
+    FeatureList, GetFeastServingInfoRequest, GetFeastServingInfoResponse,
+    GetOnlineFeaturesRequest as GrpcGetOnlineFeaturesRequest, GetOnlineFeaturesResponse,
+    GetOnlineFeaturesResponseMetadata, get_online_features_request, get_online_features_response,
 };
 use crate::proto::feast::types::{
     self as grpc_types, BoolList as GrpcBoolList, BytesList as GrpcBytesList,
@@ -18,8 +18,8 @@ use feast_server_core::feast::types::{
 };
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::model::{
-    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeaturesRequest,
-    GetOnlineFeatureResponse, ValueWrapper,
+    EntityIdValue, FeatureResults, FeatureStatus, GetOnlineFeatureResponse,
+    GetOnlineFeaturesRequest, ValueWrapper,
 };
 use prost_types::Timestamp;
 use std::collections::HashMap;
@@ -45,7 +45,7 @@ impl FeastGrpcService {
     }
 
     fn from_request_proto(
-        request: GetOnlineFeaturesRequest,
+        request: GrpcGetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeaturesRequest, GrpcStatus> {
         let mut entities: HashMap<String, Vec<EntityIdValue>> = HashMap::new();
         for (entity_name, values) in request.entities {
@@ -109,7 +109,7 @@ impl ServingService for FeastGrpcService {
 
     async fn get_online_features(
         &self,
-        request: Request<GetOnlineFeaturesRequest>,
+        request: Request<GrpcGetOnlineFeaturesRequest>,
     ) -> Result<Response<GetOnlineFeaturesResponse>, TonicStatus> {
         let inner = request.into_inner();
         let translated_request = Self::from_request_proto(inner).map_err(|status| *status)?;
