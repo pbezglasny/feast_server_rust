@@ -1,17 +1,14 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::model::{
-    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityId, Feature, FeatureType, FeatureView,
+    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
     FeatureWithKeys, GetOnlineFeatureRequest, GetOnlineFeatureResponse, HashEntityKey,
-    TypedFeature,
 };
-use crate::onlinestore::{OnlineStore, OnlineStoreRow};
+use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
-use indexmap::IndexMap;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::sync::Arc;
-use tokio::task::JoinSet;
 use tracing;
 
 pub struct FeatureStore {
@@ -34,11 +31,26 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeatureRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: IndexMap<Feature, FeatureView> =
+        let feature_to_view: HashMap<Feature, FeatureView> =
             self.registry.request_to_view_keys(&request).await?;
 
+        let lookup_mapping = build_lookup_key_mapping(
+            &feature_to_view,
+            request
+                .entities
+                .keys()
+                .map(|s| s.as_str())
+                .collect::<HashSet<&str>>(),
+        );
+        // feature view name to feature view
+        // todo remove clone
+        let view_name_to_view: HashMap<String, FeatureView> = feature_to_view
+            .values()
+            .map(|view| (view.name.clone(), view.clone()))
+            .collect();
+
         let features_with_keys: Vec<FeatureWithKeys> =
-            feature_views_to_keys(feature_to_view, &request.entities)?;
+            feature_views_to_keys(feature_to_view, &request.entities, &lookup_mapping)?;
 
         let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
 
@@ -53,63 +65,30 @@ impl FeatureStore {
 
         let feature_rows = self.online_store.get_feature_values(features).await?;
 
-        // feature view name to requested entity keys values
-        let mut view_to_keys: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
-        // feature view name to features
-        let mut view_features: HashMap<String, Vec<String>> = HashMap::new();
-
-        // feature view name to feature view
-        let mut view_name_to_view: HashMap<String, FeatureView> = HashMap::new();
-
-        let mut feature_list = vec![];
-
-        for (feature) in features_with_keys.into_iter() {
-            if view_to_keys.contains_key(&feature.feature.feature_view_name) {
-                let existing_keys = view_to_keys
-                    .get(&feature.feature.feature_view_name)
-                    .unwrap();
-                let merged_keys = {
-                    let mut combined =
-                        Vec::with_capacity(existing_keys.len() + feature.entity_keys.len());
-                    combined.extend(existing_keys.iter().cloned());
-                    combined.extend(feature.entity_keys.iter().cloned());
-                    combined
-                };
-                view_to_keys.insert(
-                    feature.feature.feature_view_name.clone(),
-                    Arc::new(merged_keys),
-                );
-            } else {
-                view_to_keys.insert(
-                    feature.feature.feature_view_name.clone(),
-                    Arc::clone(&feature.entity_keys),
-                );
-            }
-            view_features
-                .entry(feature.feature.feature_view_name.clone())
-                .or_default();
-
-            feature_list.push(TypedFeature::from(feature));
-        }
+        let feature_set = features_with_keys
+            .iter()
+            .map(|f| f.feature.clone())
+            .collect();
 
         GetOnlineFeatureResponse::try_from(
             request.entities,
             feature_rows,
             view_name_to_view,
-            feature_list,
+            &lookup_mapping,
+            feature_set,
             request.full_feature_names.unwrap_or(false),
         )
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct EntityColumnRef {
+pub(crate) struct EntityColumnRef {
     view_name: String,
     column_name: String,
 }
 
 impl EntityColumnRef {
-    fn new(view_name: String, column_name: String) -> Self {
+    pub(crate) fn new(view_name: String, column_name: String) -> Self {
         Self {
             view_name,
             column_name,
@@ -132,11 +111,38 @@ struct LookupKey {
     value_type: value_type::Enum,
 }
 
+fn build_lookup_key_mapping(
+    feature_to_view: &HashMap<Feature, FeatureView>,
+    entities_from_request: HashSet<&str>,
+) -> HashMap<EntityColumnRef, String> {
+    let mut mapping = HashMap::new();
+
+    for (feature, view) in feature_to_view {
+        if view.is_entity_less() {
+            continue;
+        }
+        for col in &view.entity_columns {
+            let lookup_name = if let Some(join_key_map) = &view.join_key_map {
+                join_key_map
+                    .get(&col.name)
+                    .filter(|col_name| entities_from_request.contains(col_name.as_str()))
+                    .unwrap_or(&col.name)
+            } else {
+                &col.name
+            };
+            let key = EntityColumnRef::new(view.name.clone(), col.name.clone());
+            mapping.insert(key, lookup_name.clone());
+        }
+    }
+    mapping
+}
+
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys(
-    feature_to_view: IndexMap<Feature, FeatureView>,
-    requested_entity_keys: &HashMap<String, Vec<EntityId>>,
+    feature_to_view: HashMap<Feature, FeatureView>,
+    requested_entity_keys: &HashMap<String, Vec<EntityIdValue>>,
+    lookup_mapping: &HashMap<EntityColumnRef, String>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
     let mut key_cache: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
@@ -152,23 +158,23 @@ fn feature_views_to_keys(
                 .entity_columns
                 .iter()
                 .map(|col| {
-                    let lookup_name = if let Some(mapping) = &view.join_key_map {
-                        mapping
-                            .get(&col.name)
-                            .filter(|col_name| {
-                                requested_entity_keys.contains_key(col_name.as_str())
-                            })
-                            .unwrap_or(&col.name)
-                    } else {
-                        &col.name
-                    };
-                    LookupKey {
-                        origin_col_name: col.name.clone(),
-                        lookup: lookup_name.clone(),
-                        value_type: col.value_type,
-                    }
+                    let entity_col_ref = EntityColumnRef::new(view.name.clone(), col.name.clone());
+                    lookup_mapping
+                        .get(&entity_col_ref)
+                        .map(|lookup| LookupKey {
+                            origin_col_name: col.name.clone(),
+                            lookup: lookup.clone(),
+                            value_type: col.value_type,
+                        })
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Missing entity column mapping for column {} in feature view {}",
+                                col.name,
+                                view.name
+                            )
+                        })
                 })
-                .collect();
+                .collect::<Result<Vec<LookupKey>>>()?;
             if lookup_keys.is_empty() {
                 return Err(anyhow!("Feature view {} has no entity columns", view.name));
             }
@@ -237,7 +243,7 @@ fn feature_views_to_keys(
 mod tests {
     use super::*;
     use crate::feast::types::{value, value_type};
-    use crate::model::{EntityId, Field, GetOnlineFeatureRequest};
+    use crate::model::{EntityIdValue, Field, GetOnlineFeatureRequest};
     use chrono::Duration;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -340,18 +346,39 @@ mod tests {
             feature_view_name: "feature_view2".to_string(),
             feature_name: "col2".to_string(),
         };
-        let features = IndexMap::from([(feature_1, feature_view_1), (feature_2, feature_view_2)]);
+        let features = HashMap::from([(feature_1, feature_view_1), (feature_2, feature_view_2)]);
         let requested_entity_keys = HashMap::from([
             (
                 "entity_col_1".to_string(),
-                vec![EntityId::Int(12), EntityId::Int(14), EntityId::Int(16)],
+                vec![
+                    EntityIdValue::Int(12),
+                    EntityIdValue::Int(14),
+                    EntityIdValue::Int(16),
+                ],
             ),
             (
                 "entity_col_2".to_string(),
-                vec![EntityId::Int(22), EntityId::Int(24), EntityId::Int(26)],
+                vec![
+                    EntityIdValue::Int(22),
+                    EntityIdValue::Int(24),
+                    EntityIdValue::Int(26),
+                ],
             ),
         ]);
-        let result = feature_views_to_keys(features, &requested_entity_keys)?;
+        let lookup_mapping = build_lookup_key_mapping(
+            &features,
+            requested_entity_keys
+                .keys()
+                .map(|s| s.as_str())
+                .collect::<HashSet<&str>>(),
+        );
+        let mut result = feature_views_to_keys(features, &requested_entity_keys, &lookup_mapping)?;
+        result.sort_by_key(|f| {
+            (
+                f.feature.feature_view_name.clone(),
+                f.feature.feature_name.clone(),
+            )
+        });
         assert_eq!(result.len(), 2);
         let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
@@ -368,7 +395,7 @@ mod tests {
             &[(12, 22), (14, 24), (16, 26)],
         );
 
-        let expected = vec![
+        let mut expected = vec![
             FeatureWithKeys {
                 feature: feature_1,
                 feature_type: FeatureType::Plain,
@@ -380,6 +407,13 @@ mod tests {
                 entity_keys: Arc::new(entity_values_2),
             },
         ];
+
+        expected.sort_by_key(|f| {
+            (
+                f.feature.feature_view_name.clone(),
+                f.feature.feature_name.clone(),
+            )
+        });
         assert_eq!(result, expected);
         Ok(())
     }
@@ -398,12 +432,23 @@ mod tests {
             feature_view_name: "feature_view1".to_string(),
             feature_name: "col1".to_string(),
         };
-        let features = IndexMap::from([(feature_1, feature_view_1)]);
+        let features = HashMap::from([(feature_1, feature_view_1)]);
         let requested_entity_keys = HashMap::from([(
             "alias_1".to_string(),
-            vec![EntityId::Int(12), EntityId::Int(14), EntityId::Int(16)],
+            vec![
+                EntityIdValue::Int(12),
+                EntityIdValue::Int(14),
+                EntityIdValue::Int(16),
+            ],
         )]);
-        let result = feature_views_to_keys(features, &requested_entity_keys)?;
+        let lookup_mapping = build_lookup_key_mapping(
+            &features,
+            requested_entity_keys
+                .keys()
+                .map(|s| s.as_str())
+                .collect::<HashSet<&str>>(),
+        );
+        let result = feature_views_to_keys(features, &requested_entity_keys, &lookup_mapping)?;
         assert_eq!(result.len(), 1);
         let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
@@ -452,9 +497,9 @@ mod tests {
         let entities = HashMap::from([(
             "driver_id".to_string(),
             vec![
-                EntityId::Int(1005),
-                EntityId::Int(1002),
-                EntityId::Int(2003),
+                EntityIdValue::Int(1005),
+                EntityIdValue::Int(1002),
+                EntityIdValue::Int(2003),
             ],
         )]);
         let request = GetOnlineFeatureRequest {
@@ -472,7 +517,7 @@ mod tests {
         for (i, feature) in result.metadata.feature_names.iter().enumerate() {
             match feature.as_str() {
                 "driver_id" => {
-                    let vec_res: Vec<Option<value::Val>> = result.results[i]
+                    let vec_res: Vec<Option<Val>> = result.results[i]
                         .values
                         .iter()
                         .map(|v| v.clone().0.val)
@@ -480,9 +525,9 @@ mod tests {
                     assert_eq!(
                         vec_res,
                         vec![
-                            Some(value::Val::Int64Val(1005)),
-                            Some(value::Val::Int64Val(1002)),
-                            Some(value::Val::Int64Val(2003))
+                            Some(Val::Int64Val(1005)),
+                            Some(Val::Int64Val(1002)),
+                            Some(Val::Int64Val(2003))
                         ]
                     );
                 }
@@ -499,11 +544,11 @@ mod tests {
         let entities = HashMap::from([
             (
                 "truck_id".to_string(),
-                vec![EntityId::Int(1002), EntityId::Int(2003)],
+                vec![EntityIdValue::Int(1002), EntityIdValue::Int(2003)],
             ),
             (
                 "driver_id".to_string(),
-                vec![EntityId::Int(1002), EntityId::Int(1005)],
+                vec![EntityIdValue::Int(1002), EntityIdValue::Int(1005)],
             ),
         ]);
         let request = GetOnlineFeatureRequest {
@@ -514,7 +559,12 @@ mod tests {
         };
 
         let result = store.get_online_features(request).await?;
-        assert_eq!(result.metadata.feature_names.len(), 5);
+        assert_eq!(
+            result.metadata.feature_names.len(),
+            5,
+            "Feature names: {:?}",
+            result.metadata.feature_names
+        );
         let mut feature_names = result.metadata.feature_names.clone();
         feature_names.sort();
         assert_eq!(

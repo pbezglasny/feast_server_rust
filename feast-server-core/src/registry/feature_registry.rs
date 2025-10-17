@@ -1,7 +1,7 @@
 use crate::config::{Provider, RegistryConfig, RegistryType};
 use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
 

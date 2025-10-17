@@ -107,24 +107,28 @@ impl OnlineStore for SqliteOnlineStore {
         let mut view_to_keys: HashMap<String, HashSet<Vec<u8>>> = HashMap::new();
         let mut view_features: HashMap<String, HashSet<String>> = HashMap::new();
 
-        for (entity_key, feature_list) in features.iter() {
+        for (entity_key, feature_list) in features {
             for feature in feature_list {
+                let Feature {
+                    feature_view_name,
+                    feature_name,
+                } = feature;
                 view_features
-                    .entry(feature.feature_view_name.clone())
+                    .entry(feature_view_name.clone())
                     .or_default()
-                    .insert(feature.feature_name.clone());
+                    .insert(feature_name);
 
                 let serialized_key =
                     serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
                 view_to_keys
-                    .entry(feature.feature_view_name.clone())
+                    .entry(feature_view_name)
                     .or_default()
                     .insert(serialized_key);
             }
         }
 
         let mut join_set: JoinSet<Result<Vec<OnlineStoreRow>>> = JoinSet::new();
-        for (view_name, serialized_keys) in view_to_keys.into_iter() {
+        for (view_name, serialized_keys) in view_to_keys {
             let features = view_features.remove(&view_name).unwrap_or_default();
             if serialized_keys.is_empty() || features.is_empty() {
                 continue;

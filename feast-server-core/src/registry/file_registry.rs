@@ -5,16 +5,14 @@ use crate::model::{
     RequestedFeatures,
 };
 use crate::registry::FeatureRegistryService;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use indexmap::IndexMap;
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
-use std::sync::Arc;
 
 pub struct FileFeatureRegistry {
     registry: FeatureRegistry,
@@ -51,14 +49,14 @@ impl FileFeatureRegistry {
     fn feature_views_from_service(
         &self,
         service_name: &str,
-    ) -> Result<IndexMap<Feature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         let service = self
             .registry
             .feature_services
             .get(service_name)
             .cloned()
             .ok_or_else(|| FeastCoreError::feature_service_not_found(service_name))?;
-        let mut result = IndexMap::new();
+        let mut result = HashMap::new();
         let FeatureService {
             name,
             project,
@@ -98,10 +96,7 @@ impl FileFeatureRegistry {
         Ok(result)
     }
 
-    fn feature_views_from_names(
-        &self,
-        names: &[Feature],
-    ) -> Result<IndexMap<Feature, FeatureView>> {
+    fn feature_views_from_names(&self, names: &[Feature]) -> Result<HashMap<Feature, FeatureView>> {
         names
             .iter()
             .map(|req_feature| -> Result<(Feature, FeatureView)> {
@@ -132,7 +127,7 @@ impl FileFeatureRegistry {
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
-    ) -> Result<IndexMap<Feature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         match requested_features {
             RequestedFeatures::FeatureService(service_name) => {
                 self.feature_views_from_service(&service_name)
@@ -166,7 +161,7 @@ impl FeatureRegistryService for FileFeatureRegistry {
     async fn request_to_view_keys(
         &self,
         request: &GetOnlineFeatureRequest,
-    ) -> Result<IndexMap<Feature, FeatureView>> {
+    ) -> Result<HashMap<Feature, FeatureView>> {
         let requested_features = RequestedFeatures::from(request);
         self.get_feature_views(requested_features)
     }
@@ -175,10 +170,9 @@ impl FeatureRegistryService for FileFeatureRegistry {
 #[cfg(test)]
 mod tests {
     use crate::model::{Feature, GetOnlineFeatureRequest};
-    use crate::registry::FeatureRegistryService;
     use crate::registry::file_registry::FileFeatureRegistry;
+    use crate::registry::FeatureRegistryService;
     use anyhow::Result;
-    use std::sync::Arc;
 
     #[test]
     fn create_feature_registry() -> Result<()> {

@@ -29,18 +29,18 @@ pub(crate) const DUMMY_ENTITY_VALUE_TYPE: ValueTypeEnum = ValueTypeEnum::String;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum EntityId {
+pub enum EntityIdValue {
     String(String),
     Int(i64),
 }
 
-impl EntityId {
+impl EntityIdValue {
     pub fn to_proto_value(&self, output_type: value_type::Enum) -> Result<Value> {
         match self {
-            EntityId::String(s) => Ok(Value {
+            EntityIdValue::String(s) => Ok(Value {
                 val: Some(Val::StringVal(s.clone())),
             }),
-            EntityId::Int(i) => match output_type {
+            EntityIdValue::Int(i) => match output_type {
                 value_type::Enum::Int32 => Ok(Value {
                     val: Some(Val::Int32Val(*i as i32)),
                 }),
@@ -50,7 +50,7 @@ impl EntityId {
                 value_type::Enum::String => Ok(Value {
                     val: Some(Val::StringVal(i.to_string())),
                 }),
-                _ => Err(anyhow!("Unsupported type convertion for number type")),
+                _ => Err(anyhow!("Unsupported type conversion for number type")),
             },
         }
     }
@@ -58,7 +58,7 @@ impl EntityId {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GetOnlineFeatureRequest {
-    pub entities: HashMap<String, Vec<EntityId>>,
+    pub entities: HashMap<String, Vec<EntityIdValue>>,
     pub feature_service: Option<String>,
     pub features: Option<Vec<String>>,
     pub full_feature_names: Option<bool>,
@@ -82,13 +82,13 @@ pub enum FeatureStatus {
 #[derive(PartialEq, Clone)]
 pub struct ValueWrapper(pub Value);
 
-impl From<EntityId> for ValueWrapper {
-    fn from(value: EntityId) -> Self {
+impl From<EntityIdValue> for ValueWrapper {
+    fn from(value: EntityIdValue) -> Self {
         match value {
-            EntityId::Int(v) => Self(Value {
+            EntityIdValue::Int(v) => Self(Value {
                 val: Some(Val::Int64Val(v)),
             }),
-            EntityId::String(v) => Self(Value {
+            EntityIdValue::String(v) => Self(Value {
                 val: Some(Val::StringVal(v)),
             }),
         }
@@ -325,6 +325,8 @@ impl<'a> Hash for HashValue<'a> {
     }
 }
 
+/// Wrapper struct to implement custom hashing for EntityKey
+/// Used as key in HashMap for result from online store
 #[derive(Debug, Clone, PartialEq)]
 pub struct HashEntityKey(pub EntityKey);
 
