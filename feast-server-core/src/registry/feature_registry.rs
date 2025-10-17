@@ -4,6 +4,7 @@ use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::log::info;
 
 fn get_provider(provider_opt: Option<Provider>, path: &str) -> Provider {
     if let Some(provider) = provider_opt {
@@ -29,24 +30,33 @@ pub async fn get_registry(
                 let mut path_buf = PathBuf::new();
                 path_buf.push(path_prefix);
                 path_buf.push(conf.path.as_str());
-                let path = Arc::new(path_buf.into_os_string().into_string().unwrap());
-                if let Some(ttl) = conf.cache_ttl_seconds {
-                    let producer_fn = {
-                        let path = Arc::clone(&path);
-                        move || {
-                            let path = Arc::clone(&path);
-                            async move { FileFeatureRegistry::from_path(path.as_ref()) }
-                        }
-                    };
-                    CachedFileRegistry::create_cached_registry_and_start_background_thread(
-                        producer_fn,
-                        ttl,
-                    )
-                    .await
-                } else {
-                    let registry = FileFeatureRegistry::from_path(path.as_ref())?;
-                    Ok(Arc::new(registry))
-                }
+                info!(
+                    "Using local feature registry from path {}",
+                    path_buf.display()
+                );
+                let registry =
+                    CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds.clone()).await?;
+                Ok(registry)
+            }
+            Provider::AWS => {
+                info!(
+                    "Using AWS feature registry from path {}",
+                    conf.path.as_str()
+                );
+                let registry =
+                    CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds.clone())
+                        .await?;
+                Ok(registry)
+            }
+            Provider::GCP => {
+                info!(
+                    "Using GCP feature registry from path {}",
+                    conf.path.as_str()
+                );
+                let registry =
+                    CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds.clone())
+                        .await?;
+                Ok(registry)
             }
             _ => Err(anyhow!("Unsupported provider for file registry")),
         },

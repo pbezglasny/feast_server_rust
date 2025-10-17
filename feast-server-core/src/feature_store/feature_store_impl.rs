@@ -476,7 +476,8 @@ mod tests {
     async fn get_feature_store() -> Result<FeatureStore> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
-        let feature_registry = FileFeatureRegistry::from_path(&registry_file)?;
+        let registry_file_path = std::path::PathBuf::from(&registry_file);
+        let feature_registry = FileFeatureRegistry::from_path(&registry_file_path)?;
         let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
         let sqlite_store = SqliteOnlineStore::from_options(
             &sqlite_path,
