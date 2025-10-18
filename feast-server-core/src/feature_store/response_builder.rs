@@ -122,7 +122,7 @@ fn group_rows(
         };
         let status: FeatureStatus = get_feature_status(
             &value,
-            feature_views.get(feature_view_name.as_str()).map(|fv| *fv),
+            feature_views.get(feature_view_name.as_str()).copied(),
             &event_ts,
         );
         result

@@ -35,7 +35,7 @@ pub async fn get_registry(
                     path_buf.display()
                 );
                 let registry =
-                    CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds.clone()).await?;
+                    CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds).await?;
                 Ok(registry)
             }
             Provider::AWS => {
@@ -44,8 +44,7 @@ pub async fn get_registry(
                     conf.path.as_str()
                 );
                 let registry =
-                    CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds.clone())
-                        .await?;
+                    CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds).await?;
                 Ok(registry)
             }
             Provider::GCP => {
@@ -54,8 +53,7 @@ pub async fn get_registry(
                     conf.path.as_str()
                 );
                 let registry =
-                    CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds.clone())
-                        .await?;
+                    CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds).await?;
                 Ok(registry)
             }
             _ => Err(anyhow!("Unsupported provider for file registry")),
