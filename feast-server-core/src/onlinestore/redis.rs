@@ -11,6 +11,7 @@ use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, ErrorKind, FromRedisValue, RedisResult, Value as RedisValue};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::sync::Arc;
 
 fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
     let mut key_bytes = feature.feature_view_name.as_bytes().to_vec();
@@ -73,7 +74,7 @@ enum RedisRequest<'a> {
 impl OnlineStore for RedisOnlineStore {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Feature>>,
+        features: HashMap<HashEntityKey, Vec<Arc<Feature>>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut entities: Vec<RedisRequest> = vec![];
 
@@ -218,8 +219,14 @@ mod tests {
                 }],
             })),
             vec![
-                Feature::new("driver_hourly_stats".to_string(), "conv_rate".to_string()),
-                Feature::new("driver_hourly_stats".to_string(), "acc_rate".to_string()),
+                Arc::new(Feature::new(
+                    "driver_hourly_stats".to_string(),
+                    "conv_rate".to_string(),
+                )),
+                Arc::new(Feature::new(
+                    "driver_hourly_stats".to_string(),
+                    "acc_rate".to_string(),
+                )),
             ],
         )]);
         let result = redis_store.get_feature_values(arg).await?;

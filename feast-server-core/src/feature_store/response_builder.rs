@@ -10,18 +10,19 @@ use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Feature, Value, FeatureStatus, DateTime<Utc>);
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypedFeature<'a> {
-    pub feature: &'a Feature,
+pub struct TypedFeature {
+    pub feature: Arc<Feature>,
     pub feature_type: FeatureType,
 }
 
-impl<'a> From<FeatureWithKeys<'a>> for TypedFeature<'a> {
-    fn from(fk: FeatureWithKeys<'a>) -> Self {
+impl From<FeatureWithKeys> for TypedFeature {
+    fn from(fk: FeatureWithKeys) -> Self {
         Self {
             feature: fk.feature,
             feature_type: fk.feature_type,
@@ -258,12 +259,12 @@ impl GetOnlineFeatureResponseBuilder {
         self
     }
 
-    fn add_missing_features(mut self, features: HashSet<Feature>) -> Self {
+    fn add_missing_features(mut self, features: HashSet<Arc<Feature>>) -> Self {
         for feature in features {
             let feature_name = if self.full_feature_names {
                 format!("{}__{}", feature.feature_view_name, feature.feature_name)
             } else {
-                feature.feature_name
+                feature.feature_name.clone()
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
@@ -334,7 +335,7 @@ impl GetOnlineFeatureResponse {
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<&str, &FeatureView>,
         lookup_mapping: &HashMap<EntityColumnRef, String>,
-        mut feature_set: HashSet<Feature>,
+        mut feature_set: HashSet<Arc<Feature>>,
         full_feature_names: bool,
     ) -> Result<Self> {
         let mut grouped_rows = group_rows(rows, &feature_views, lookup_mapping)?;
@@ -423,10 +424,10 @@ mod tests {
         let mut feature_views = HashMap::new();
         feature_views.insert(feature_view.name.as_str(), &feature_view);
 
-        let features: HashSet<Feature> = vec![Feature::new(
+        let features: HashSet<Arc<Feature>> = vec![Arc::new(Feature::new(
             "driver_hourly_stats".to_string(),
             "acc_rate".to_string(),
-        )]
+        ))]
         .into_iter()
         .collect();
 
