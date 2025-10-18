@@ -156,7 +156,7 @@ fn feature_views_to_keys(
     lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
-    let mut key_cache: HashMap<String, Arc<Vec<Arc<EntityKey>>>> = HashMap::new();
+    let mut key_cache: HashMap<Vec<&str>, Arc<Vec<Arc<EntityKey>>>> = HashMap::new();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
             result.push(FeatureWithKeys {
@@ -202,8 +202,7 @@ fn feature_views_to_keys(
             let cache_key = lookup_keys
                 .iter()
                 .map(|lookup_key| lookup_key.origin_col_name)
-                .collect::<Vec<&str>>()
-                .join(",");
+                .collect::<Vec<&str>>();
             let entity_keys = match key_cache.entry(cache_key) {
                 Entry::Occupied(entry) => Arc::clone(entry.get()),
                 Entry::Vacant(entry) => {
