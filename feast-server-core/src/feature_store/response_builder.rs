@@ -242,12 +242,12 @@ impl GetOnlineFeatureResponseBuilder {
         self
     }
 
-    fn add_missing_features(mut self, features: &[Feature]) -> Self {
+    fn add_missing_features(mut self, features: HashSet<Feature>) -> Self {
         for feature in features {
             let feature_name = if self.full_feature_names {
                 format!("{}__{}", feature.feature_view_name, feature.feature_name)
             } else {
-                feature.feature_name.clone()
+                feature.feature_name
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
@@ -265,16 +265,21 @@ impl GetOnlineFeatureResponseBuilder {
             return self;
         }
         for row in rows {
+            let ResponseFeatureRow(feature, value, status, event_ts) = row;
+            let Feature {
+                feature_view_name,
+                feature_name,
+            } = feature;
             let feature_name = if self.full_feature_names {
-                format!("{}__{}", row.0.feature_view_name, row.0.feature_name)
+                format!("{}__{}", feature_view_name, feature_name)
             } else {
-                row.0.feature_name.clone()
+                feature_name
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
-                values: vec![ValueWrapper(row.1); self.num_values],
-                statuses: vec![row.2; self.num_values],
-                event_timestamps: vec![row.3; self.num_values],
+                values: vec![ValueWrapper(value); self.num_values],
+                statuses: vec![status; self.num_values],
+                event_timestamps: vec![event_ts; self.num_values],
             });
             self.next_feature_idx += 1;
         }
@@ -351,7 +356,7 @@ impl GetOnlineFeatureResponse {
         }
         response_builder = response_builder
             .add_entity_less_features(rows)
-            .add_missing_features(&feature_set.into_iter().collect::<Vec<_>>());
+            .add_missing_features(feature_set);
         Ok(response_builder.build())
     }
 }
