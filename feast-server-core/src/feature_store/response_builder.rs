@@ -334,7 +334,7 @@ impl GetOnlineFeatureResponse {
         entity_keys: HashMap<String, Vec<EntityIdValue>>,
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<&str, &FeatureView>,
-        lookup_mapping: &HashMap<EntityColumnRef, String>,
+        lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
         mut feature_set: HashSet<Arc<Feature>>,
         full_feature_names: bool,
     ) -> Result<Self> {
