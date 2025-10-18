@@ -86,7 +86,7 @@ fn entity_less_request_entity_key() -> RequestEntityIdKey {
 
 fn group_rows(
     rows: Vec<OnlineStoreRow>,
-    feature_views: &HashMap<String, FeatureView>,
+    feature_views: &HashMap<&str, &FeatureView>,
     lookup_mapping: &HashMap<EntityColumnRef, String>,
 ) -> Result<HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>>> {
     let mut result: HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>> = HashMap::new();
@@ -119,8 +119,11 @@ fn group_rows(
             name: lookup_key.clone(),
             value: entity_id_value.clone(),
         };
-        let status: FeatureStatus =
-            get_feature_status(&value, feature_views.get(&feature_view_name), &event_ts);
+        let status: FeatureStatus = get_feature_status(
+            &value,
+            feature_views.get(feature_view_name.as_str()).map(|fv| *fv),
+            &event_ts,
+        );
         result
             .entry(request_entity_key)
             .or_default()
@@ -329,7 +332,7 @@ impl GetOnlineFeatureResponse {
     pub(crate) fn try_from(
         entity_keys: HashMap<String, Vec<EntityIdValue>>,
         rows: Vec<OnlineStoreRow>,
-        feature_views: HashMap<String, FeatureView>,
+        feature_views: HashMap<&str, &FeatureView>,
         lookup_mapping: &HashMap<EntityColumnRef, String>,
         mut feature_set: HashSet<Feature>,
         full_feature_names: bool,
@@ -417,7 +420,7 @@ mod tests {
         feature_view.entity_names = vec!["driver_id".to_string()];
 
         let mut feature_views = HashMap::new();
-        feature_views.insert(feature_view.name.clone(), feature_view);
+        feature_views.insert(feature_view.name.as_str(), &feature_view);
 
         let features: HashSet<Feature> = vec![Feature::new(
             "driver_hourly_stats".to_string(),

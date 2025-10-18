@@ -1,13 +1,13 @@
 use crate::feast::types::value::Val;
-use crate::feast::types::{value_type, EntityKey, Value};
+use crate::feast::types::{EntityKey, Value, value_type};
 use crate::model::{
-    EntityIdValue, Feature, FeatureType, FeatureView, GetOnlineFeatureResponse, GetOnlineFeaturesRequest,
-    HashEntityKey, DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL,
+    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
+    GetOnlineFeatureResponse, GetOnlineFeaturesRequest, HashEntityKey,
 };
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
-use anyhow::{anyhow, Result};
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use anyhow::{Result, anyhow};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::sync::Arc;
 use tracing;
 
@@ -43,10 +43,9 @@ impl FeatureStore {
                 .collect::<HashSet<&str>>(),
         );
         // feature view name to feature view
-        // todo remove clone
-        let view_name_to_view: HashMap<String, FeatureView> = feature_to_view
+        let view_name_to_view: HashMap<&str, &FeatureView> = feature_to_view
             .values()
-            .map(|view| (view.name.clone(), view.clone()))
+            .map(|view| (view.name.as_str(), view))
             .collect();
 
         let features_with_keys: Vec<FeatureWithKeys> =
