@@ -109,18 +109,18 @@ impl OnlineStore for SqliteOnlineStore {
         let mut view_features: HashMap<String, HashSet<String>> = HashMap::new();
 
         for (entity_key, feature_list) in features {
+            let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
             for feature in feature_list {
+                let fv_name = feature.feature_view_name.clone();
                 view_features
-                    .entry(feature.feature_view_name.clone())
+                    .entry(fv_name.clone())
                     .or_default()
                     .insert(feature.feature_name.clone());
 
-                let serialized_key =
-                    serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
                 view_to_keys
-                    .entry(feature.feature_view_name.clone())
+                    .entry(fv_name)
                     .or_default()
-                    .insert(serialized_key);
+                    .insert(serialized_key.clone());
             }
         }
 
