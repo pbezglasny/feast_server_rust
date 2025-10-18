@@ -1,5 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 #[path = "common.rs"]
@@ -30,14 +31,19 @@ fn bench_onlinestore(c: &mut Criterion) {
     let entity_keys = build_entity_keys();
     let feature_names = vec!["conv_rate".to_string(), "acc_rate".to_string()];
 
-    let arg: HashMap<HashEntityKey, Vec<Feature>> = entity_keys
+    let arg: HashMap<HashEntityKey, Vec<Arc<Feature>>> = entity_keys
         .into_iter()
         .map(|key| {
             (
-                HashEntityKey(key),
+                HashEntityKey(Arc::new(key)),
                 feature_names
                     .iter()
-                    .map(|feature| Feature::new("driver_hourly_stats".to_string(), feature.clone()))
+                    .map(|feature| {
+                        Arc::new(Feature::new(
+                            "driver_hourly_stats".to_string(),
+                            feature.clone(),
+                        ))
+                    })
                     .collect(),
             )
         })

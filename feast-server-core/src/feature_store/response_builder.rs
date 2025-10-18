@@ -1,19 +1,51 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value};
-use crate::feature_store::feature_store_impl::EntityColumnRef;
+use crate::feature_store::feature_store_impl::{EntityColumnRef, FeatureWithKeys};
 use crate::model::FeatureStatus::Present;
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureResults, FeatureStatus,
-    FeatureType, FeatureView, GetOnlineFeatureResponse, TypedFeature, ValueWrapper,
+    FeatureType, FeatureView, GetOnlineFeatureResponse, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
-use std::time::UNIX_EPOCH;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Feature, Value, FeatureStatus, DateTime<Utc>);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedFeature {
+    pub feature: Arc<Feature>,
+    pub feature_type: FeatureType,
+}
+
+impl From<FeatureWithKeys> for TypedFeature {
+    fn from(fk: FeatureWithKeys) -> Self {
+        Self {
+            feature: fk.feature,
+            feature_type: fk.feature_type,
+        }
+    }
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct FeatureRef<'a> {
+    feature: &'a Feature,
+}
+
+impl<'a> From<&'a Feature> for FeatureRef<'a> {
+    fn from(feature: &'a Feature) -> Self {
+        Self { feature }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestEntityIdKey {
+    pub name: String,
+    pub value: EntityIdValue,
+}
 
 fn get_feature_status(
     value: &Value,
@@ -37,23 +69,6 @@ fn get_feature_status(
     }
 }
 
-#[derive(Hash, PartialEq, Eq)]
-struct FeatureRef<'a> {
-    feature: &'a Feature,
-}
-
-impl<'a> From<&'a Feature> for FeatureRef<'a> {
-    fn from(feature: &'a Feature) -> Self {
-        Self { feature }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RequestEntityIdKey {
-    pub name: String,
-    pub value: EntityIdValue,
-}
-
 fn val_to_entity_id_value(value: &Val) -> Result<EntityIdValue> {
     match value {
         Val::Int32Val(i) => Ok(EntityIdValue::Int(*i as i64)),
@@ -72,8 +87,8 @@ fn entity_less_request_entity_key() -> RequestEntityIdKey {
 
 fn group_rows(
     rows: Vec<OnlineStoreRow>,
-    feature_views: &HashMap<String, FeatureView>,
-    lookup_mapping: &HashMap<EntityColumnRef, String>,
+    feature_views: &HashMap<&str, &FeatureView>,
+    lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
 ) -> Result<HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>>> {
     let mut result: HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>> = HashMap::new();
     for row in rows.into_iter() {
@@ -91,8 +106,7 @@ fn group_rows(
             ));
         }
         let entity_key_name = entity_key.0.join_keys[0].clone();
-        let entity_col_ref =
-            EntityColumnRef::new(feature_view_name.clone(), entity_key_name.clone());
+        let entity_col_ref = EntityColumnRef::new(&feature_view_name, &entity_key_name);
         let lookup_key = lookup_mapping
             .get(&entity_col_ref)
             .expect("programming error: lookup_mapping should contain all entity columns");
@@ -106,8 +120,11 @@ fn group_rows(
             name: lookup_key.clone(),
             value: entity_id_value.clone(),
         };
-        let status: FeatureStatus =
-            get_feature_status(&value, feature_views.get(&feature_view_name), &event_ts);
+        let status: FeatureStatus = get_feature_status(
+            &value,
+            feature_views.get(feature_view_name.as_str()).copied(),
+            &event_ts,
+        );
         result
             .entry(request_entity_key)
             .or_default()
@@ -242,7 +259,7 @@ impl GetOnlineFeatureResponseBuilder {
         self
     }
 
-    fn add_missing_features(mut self, features: &[Feature]) -> Self {
+    fn add_missing_features(mut self, features: HashSet<Arc<Feature>>) -> Self {
         for feature in features {
             let feature_name = if self.full_feature_names {
                 format!("{}__{}", feature.feature_view_name, feature.feature_name)
@@ -265,16 +282,21 @@ impl GetOnlineFeatureResponseBuilder {
             return self;
         }
         for row in rows {
+            let ResponseFeatureRow(feature, value, status, event_ts) = row;
+            let Feature {
+                feature_view_name,
+                feature_name,
+            } = feature;
             let feature_name = if self.full_feature_names {
-                format!("{}__{}", row.0.feature_view_name, row.0.feature_name)
+                format!("{}__{}", feature_view_name, feature_name)
             } else {
-                row.0.feature_name.clone()
+                feature_name
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
-                values: vec![ValueWrapper(row.1); self.num_values],
-                statuses: vec![row.2; self.num_values],
-                event_timestamps: vec![row.3; self.num_values],
+                values: vec![ValueWrapper(value); self.num_values],
+                statuses: vec![status; self.num_values],
+                event_timestamps: vec![event_ts; self.num_values],
             });
             self.next_feature_idx += 1;
         }
@@ -311,9 +333,9 @@ impl GetOnlineFeatureResponse {
     pub(crate) fn try_from(
         entity_keys: HashMap<String, Vec<EntityIdValue>>,
         rows: Vec<OnlineStoreRow>,
-        feature_views: HashMap<String, FeatureView>,
-        lookup_mapping: &HashMap<EntityColumnRef, String>,
-        mut feature_set: HashSet<Feature>,
+        feature_views: HashMap<&str, &FeatureView>,
+        lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
+        mut feature_set: HashSet<Arc<Feature>>,
         full_feature_names: bool,
     ) -> Result<Self> {
         let mut grouped_rows = group_rows(rows, &feature_views, lookup_mapping)?;
@@ -351,7 +373,7 @@ impl GetOnlineFeatureResponse {
         }
         response_builder = response_builder
             .add_entity_less_features(rows)
-            .add_missing_features(&feature_set.into_iter().collect::<Vec<_>>());
+            .add_missing_features(feature_set);
         Ok(response_builder.build())
     }
 }
@@ -365,6 +387,7 @@ mod tests {
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     #[test]
     fn try_from_builds_response_with_missing_values() -> Result<()> {
@@ -378,12 +401,12 @@ mod tests {
         let feature_value = Value {
             val: Some(Val::Int64Val(42)),
         };
-        let entity_key = EntityKey {
+        let entity_key = Arc::new(EntityKey {
             join_keys: vec!["driver_id".to_string()],
             entity_values: vec![Value {
                 val: Some(Val::Int64Val(1001)),
             }],
-        };
+        });
         let row = OnlineStoreRow {
             feature_view_name: "driver_hourly_stats".to_string(),
             entity_key: HashEntityKey(entity_key),
@@ -399,17 +422,17 @@ mod tests {
         feature_view.entity_names = vec!["driver_id".to_string()];
 
         let mut feature_views = HashMap::new();
-        feature_views.insert(feature_view.name.clone(), feature_view);
+        feature_views.insert(feature_view.name.as_str(), &feature_view);
 
-        let features: HashSet<Feature> = vec![Feature::new(
+        let features: HashSet<Arc<Feature>> = vec![Arc::new(Feature::new(
             "driver_hourly_stats".to_string(),
             "acc_rate".to_string(),
-        )]
+        ))]
         .into_iter()
         .collect();
 
         let lookup_mapping: HashMap<EntityColumnRef, String> = vec![(
-            EntityColumnRef::new("driver_hourly_stats".to_string(), "driver_id".to_string()),
+            EntityColumnRef::new("driver_hourly_stats", "driver_id"),
             "driver_id".to_string(),
         )]
         .into_iter()

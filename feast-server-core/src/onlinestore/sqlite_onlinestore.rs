@@ -11,6 +11,7 @@ use prost::Message;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tokio::task::JoinSet;
 
 pub struct ConnectionOptions {
@@ -67,7 +68,7 @@ impl SqliteStoreRow {
             })?;
         Ok(OnlineStoreRow {
             feature_view_name: feature_view_name.to_owned(),
-            entity_key: HashEntityKey(entity_key),
+            entity_key: HashEntityKey(Arc::new(entity_key)),
             feature_name,
             value: decoded_value,
             event_ts,
@@ -102,28 +103,24 @@ pub struct SqliteOnlineStore {
 impl OnlineStore for SqliteOnlineStore {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Feature>>,
+        features: HashMap<HashEntityKey, Vec<Arc<Feature>>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut view_to_keys: HashMap<String, HashSet<Vec<u8>>> = HashMap::new();
         let mut view_features: HashMap<String, HashSet<String>> = HashMap::new();
 
         for (entity_key, feature_list) in features {
+            let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
             for feature in feature_list {
-                let Feature {
-                    feature_view_name,
-                    feature_name,
-                } = feature;
+                let fv_name = feature.feature_view_name.clone();
                 view_features
-                    .entry(feature_view_name.clone())
+                    .entry(fv_name.clone())
                     .or_default()
-                    .insert(feature_name);
+                    .insert(feature.feature_name.clone());
 
-                let serialized_key =
-                    serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
                 view_to_keys
-                    .entry(feature_view_name)
+                    .entry(fv_name)
                     .or_default()
-                    .insert(serialized_key);
+                    .insert(serialized_key.clone());
             }
         }
 
@@ -226,19 +223,19 @@ mod test {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
 
-        let entity_key = EntityKey {
+        let entity_key = Arc::new(EntityKey {
             join_keys: vec!["driver_id".to_string()],
             entity_values: vec![Value {
                 val: Some(Val::Int64Val(1005)),
             }],
-        };
+        });
 
-        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from([(
+        let arg: HashMap<HashEntityKey, Vec<Arc<Feature>>> = HashMap::from([(
             HashEntityKey(entity_key),
-            vec![Feature::new(
+            vec![Arc::new(Feature::new(
                 "driver_hourly_stats".to_string(),
                 "conv_rate".to_string(),
-            )],
+            ))],
         )]);
 
         let sqlite_store = SqliteOnlineStore::from_options(

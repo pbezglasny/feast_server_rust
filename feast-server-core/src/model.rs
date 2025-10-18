@@ -328,7 +328,7 @@ impl<'a> Hash for HashValue<'a> {
 /// Wrapper struct to implement custom hashing for EntityKey
 /// Used as key in HashMap for result from online store
 #[derive(Debug, Clone, PartialEq)]
-pub struct HashEntityKey(pub EntityKey);
+pub struct HashEntityKey(pub Arc<EntityKey>);
 
 impl Hash for HashEntityKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -353,28 +353,6 @@ pub struct Feature {
 pub enum FeatureType {
     Plain,
     EntityLess,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeatureWithKeys {
-    pub feature: Feature,
-    pub feature_type: FeatureType,
-    pub entity_keys: Arc<Vec<EntityKey>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TypedFeature {
-    pub feature: Feature,
-    pub feature_type: FeatureType,
-}
-
-impl From<FeatureWithKeys> for TypedFeature {
-    fn from(fk: FeatureWithKeys) -> Self {
-        Self {
-            feature: fk.feature,
-            feature_type: fk.feature_type,
-        }
-    }
 }
 
 impl Feature {
