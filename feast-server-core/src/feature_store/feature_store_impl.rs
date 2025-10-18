@@ -153,7 +153,7 @@ fn build_lookup_key_mapping<'a>(
 fn feature_views_to_keys(
     feature_to_view: &HashMap<Arc<Feature>, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityIdValue>>,
-    lookup_mapping: &HashMap<EntityColumnRef, String>,
+    lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
     let mut key_cache: HashMap<String, Arc<Vec<Arc<EntityKey>>>> = HashMap::new();
