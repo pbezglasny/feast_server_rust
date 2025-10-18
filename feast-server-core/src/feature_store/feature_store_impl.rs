@@ -1,13 +1,13 @@
 use crate::feast::types::value::Val;
-use crate::feast::types::{EntityKey, Value, value_type};
+use crate::feast::types::{value_type, EntityKey, Value};
 use crate::model::{
-    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
-    FeatureWithKeys, GetOnlineFeatureResponse, GetOnlineFeaturesRequest, HashEntityKey,
+    EntityIdValue, Feature, FeatureType, FeatureView, GetOnlineFeatureResponse, GetOnlineFeaturesRequest,
+    HashEntityKey, DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL,
 };
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
-use anyhow::{Result, anyhow};
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use anyhow::{anyhow, Result};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::sync::Arc;
 use tracing;
 
@@ -50,7 +50,7 @@ impl FeatureStore {
             .collect();
 
         let features_with_keys: Vec<FeatureWithKeys> =
-            feature_views_to_keys(feature_to_view, &request.entities, &lookup_mapping)?;
+            feature_views_to_keys(&feature_to_view, &request.entities, &lookup_mapping)?;
 
         let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
 
@@ -81,14 +81,21 @@ impl FeatureStore {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct EntityColumnRef {
-    view_name: String,
-    column_name: String,
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureWithKeys<'a> {
+    pub feature: &'a Feature,
+    pub feature_type: FeatureType,
+    pub entity_keys: Arc<Vec<EntityKey>>,
 }
 
-impl EntityColumnRef {
-    pub(crate) fn new(view_name: String, column_name: String) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct EntityColumnRef<'a> {
+    view_name: &'a str,
+    column_name: &'a str,
+}
+
+impl<'a> EntityColumnRef<'a> {
+    pub(crate) fn new(view_name: &'a str, column_name: &'a str) -> Self {
         Self {
             view_name,
             column_name,
@@ -111,10 +118,10 @@ struct LookupKey {
     value_type: value_type::Enum,
 }
 
-fn build_lookup_key_mapping(
-    feature_to_view: &HashMap<Feature, FeatureView>,
+fn build_lookup_key_mapping<'a>(
+    feature_to_view: &'a HashMap<Feature, FeatureView>,
     entities_from_request: HashSet<&str>,
-) -> HashMap<EntityColumnRef, String> {
+) -> HashMap<EntityColumnRef<'a>, String> {
     let mut mapping = HashMap::new();
 
     for (feature, view) in feature_to_view {
@@ -130,7 +137,7 @@ fn build_lookup_key_mapping(
             } else {
                 &col.name
             };
-            let key = EntityColumnRef::new(view.name.clone(), col.name.clone());
+            let key = EntityColumnRef::new(&view.name, &col.name);
             mapping.insert(key, lookup_name.clone());
         }
     }
@@ -139,11 +146,11 @@ fn build_lookup_key_mapping(
 
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns a mapping from requested features to shared entity key vectors.
-fn feature_views_to_keys(
-    feature_to_view: HashMap<Feature, FeatureView>,
-    requested_entity_keys: &HashMap<String, Vec<EntityIdValue>>,
-    lookup_mapping: &HashMap<EntityColumnRef, String>,
-) -> Result<Vec<FeatureWithKeys>> {
+fn feature_views_to_keys<'a>(
+    feature_to_view: &'a HashMap<Feature, FeatureView>,
+    requested_entity_keys: &'a HashMap<String, Vec<EntityIdValue>>,
+    lookup_mapping: &HashMap<EntityColumnRef<'a>, String>,
+) -> Result<Vec<FeatureWithKeys<'a>>> {
     let mut result = vec![];
     let mut key_cache: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
     for (feature, view) in feature_to_view {
@@ -158,7 +165,7 @@ fn feature_views_to_keys(
                 .entity_columns
                 .iter()
                 .map(|col| {
-                    let entity_col_ref = EntityColumnRef::new(view.name.clone(), col.name.clone());
+                    let entity_col_ref = EntityColumnRef::new(&view.name, &col.name);
                     lookup_mapping
                         .get(&entity_col_ref)
                         .map(|lookup| LookupKey {
@@ -372,7 +379,7 @@ mod tests {
                 .map(|s| s.as_str())
                 .collect::<HashSet<&str>>(),
         );
-        let mut result = feature_views_to_keys(features, &requested_entity_keys, &lookup_mapping)?;
+        let mut result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         result.sort_by_key(|f| {
             (
                 f.feature.feature_view_name.clone(),
@@ -397,12 +404,12 @@ mod tests {
 
         let mut expected = vec![
             FeatureWithKeys {
-                feature: feature_1,
+                feature: &feature_1,
                 feature_type: FeatureType::Plain,
                 entity_keys: Arc::new(entity_values_1),
             },
             FeatureWithKeys {
-                feature: feature_2,
+                feature: &feature_2,
                 feature_type: FeatureType::Plain,
                 entity_keys: Arc::new(entity_values_2),
             },
@@ -448,7 +455,7 @@ mod tests {
                 .map(|s| s.as_str())
                 .collect::<HashSet<&str>>(),
         );
-        let result = feature_views_to_keys(features, &requested_entity_keys, &lookup_mapping)?;
+        let result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         assert_eq!(result.len(), 1);
         let feature_1 = Feature {
             feature_view_name: "feature_view1".to_string(),
@@ -458,7 +465,7 @@ mod tests {
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
 
         let expected = vec![FeatureWithKeys {
-            feature: feature_1,
+            feature: &feature_1,
             feature_type: FeatureType::Plain,
             entity_keys: Arc::new(entity_values_1),
         }];

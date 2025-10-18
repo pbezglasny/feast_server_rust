@@ -1,19 +1,50 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value};
-use crate::feature_store::feature_store_impl::EntityColumnRef;
+use crate::feature_store::feature_store_impl::{EntityColumnRef, FeatureWithKeys};
 use crate::model::FeatureStatus::Present;
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureResults, FeatureStatus,
-    FeatureType, FeatureView, GetOnlineFeatureResponse, TypedFeature, ValueWrapper,
+    FeatureType, FeatureView, GetOnlineFeatureResponse, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use std::collections::{HashMap, HashSet};
-use std::time::UNIX_EPOCH;
 
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Feature, Value, FeatureStatus, DateTime<Utc>);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedFeature<'a> {
+    pub feature: &'a Feature,
+    pub feature_type: FeatureType,
+}
+
+impl<'a> From<FeatureWithKeys<'a>> for TypedFeature<'a> {
+    fn from(fk: FeatureWithKeys<'a>) -> Self {
+        Self {
+            feature: fk.feature,
+            feature_type: fk.feature_type,
+        }
+    }
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct FeatureRef<'a> {
+    feature: &'a Feature,
+}
+
+impl<'a> From<&'a Feature> for FeatureRef<'a> {
+    fn from(feature: &'a Feature) -> Self {
+        Self { feature }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestEntityIdKey {
+    pub name: String,
+    pub value: EntityIdValue,
+}
 
 fn get_feature_status(
     value: &Value,
@@ -35,23 +66,6 @@ fn get_feature_status(
     } else {
         Present
     }
-}
-
-#[derive(Hash, PartialEq, Eq)]
-struct FeatureRef<'a> {
-    feature: &'a Feature,
-}
-
-impl<'a> From<&'a Feature> for FeatureRef<'a> {
-    fn from(feature: &'a Feature) -> Self {
-        Self { feature }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RequestEntityIdKey {
-    pub name: String,
-    pub value: EntityIdValue,
 }
 
 fn val_to_entity_id_value(value: &Val) -> Result<EntityIdValue> {
@@ -91,8 +105,7 @@ fn group_rows(
             ));
         }
         let entity_key_name = entity_key.0.join_keys[0].clone();
-        let entity_col_ref =
-            EntityColumnRef::new(feature_view_name.clone(), entity_key_name.clone());
+        let entity_col_ref = EntityColumnRef::new(&feature_view_name, &entity_key_name);
         let lookup_key = lookup_mapping
             .get(&entity_col_ref)
             .expect("programming error: lookup_mapping should contain all entity columns");
@@ -414,7 +427,7 @@ mod tests {
         .collect();
 
         let lookup_mapping: HashMap<EntityColumnRef, String> = vec![(
-            EntityColumnRef::new("driver_hourly_stats".to_string(), "driver_id".to_string()),
+            EntityColumnRef::new("driver_hourly_stats", "driver_id"),
             "driver_id".to_string(),
         )]
         .into_iter()

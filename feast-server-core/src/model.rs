@@ -355,28 +355,6 @@ pub enum FeatureType {
     EntityLess,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeatureWithKeys {
-    pub feature: Feature,
-    pub feature_type: FeatureType,
-    pub entity_keys: Arc<Vec<EntityKey>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TypedFeature {
-    pub feature: Feature,
-    pub feature_type: FeatureType,
-}
-
-impl From<FeatureWithKeys> for TypedFeature {
-    fn from(fk: FeatureWithKeys) -> Self {
-        Self {
-            feature: fk.feature,
-            feature_type: fk.feature_type,
-        }
-    }
-}
-
 impl Feature {
     pub fn new(feature_view_name: String, feature_name: String) -> Self {
         Self {
