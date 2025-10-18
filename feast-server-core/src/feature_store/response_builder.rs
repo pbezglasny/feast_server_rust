@@ -68,11 +68,11 @@ fn get_feature_status(
     }
 }
 
-fn val_to_entity_id_value(value: &Val) -> Result<EntityIdValue> {
+fn val_to_entity_id_value(value: Val) -> Result<EntityIdValue> {
     match value {
-        Val::Int32Val(i) => Ok(EntityIdValue::Int(*i as i64)),
-        Val::Int64Val(i) => Ok(EntityIdValue::Int(*i)),
-        Val::StringVal(s) => Ok(EntityIdValue::String(s.clone())),
+        Val::Int32Val(i) => Ok(EntityIdValue::Int(i as i64)),
+        Val::Int64Val(i) => Ok(EntityIdValue::Int(i)),
+        Val::StringVal(s) => Ok(EntityIdValue::String(s)),
         other => Err(anyhow!("Unsupported entity value type: {:?}", other)),
     }
 }
@@ -93,7 +93,7 @@ fn group_rows(
     for row in rows.into_iter() {
         let OnlineStoreRow {
             feature_view_name,
-            entity_key,
+            mut entity_key,
             feature_name,
             value,
             event_ts,
@@ -104,14 +104,17 @@ fn group_rows(
                 "Invalid entity key with multiple join keys or entity values"
             ));
         }
-        let entity_key_name = entity_key.0.join_keys[0].clone();
+        let entity_key_name = entity_key.0.join_keys.pop().unwrap();
         let entity_col_ref = EntityColumnRef::new(&feature_view_name, &entity_key_name);
         let lookup_key = lookup_mapping
             .get(&entity_col_ref)
             .expect("programming error: lookup_mapping should contain all entity columns");
-        let entity_id_value = entity_key.0.entity_values[0]
+        let entity_id_value = entity_key
+            .0
+            .entity_values
+            .pop()
+            .unwrap()
             .val
-            .as_ref()
             .map(val_to_entity_id_value)
             .transpose()?
             .ok_or(anyhow!("Empty entity id value"))?;
