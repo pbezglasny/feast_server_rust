@@ -88,7 +88,7 @@ fn entity_less_request_entity_key() -> RequestEntityIdKey {
 fn group_rows(
     rows: Vec<OnlineStoreRow>,
     feature_views: &HashMap<&str, &FeatureView>,
-    lookup_mapping: &HashMap<EntityColumnRef, String>,
+    lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
 ) -> Result<HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>>> {
     let mut result: HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>> = HashMap::new();
     for row in rows.into_iter() {
