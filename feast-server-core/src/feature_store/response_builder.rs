@@ -386,6 +386,7 @@ mod tests {
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     #[test]
     fn try_from_builds_response_with_missing_values() -> Result<()> {
@@ -399,12 +400,12 @@ mod tests {
         let feature_value = Value {
             val: Some(Val::Int64Val(42)),
         };
-        let entity_key = EntityKey {
+        let entity_key = Arc::new(EntityKey {
             join_keys: vec!["driver_id".to_string()],
             entity_values: vec![Value {
                 val: Some(Val::Int64Val(1001)),
             }],
-        };
+        });
         let row = OnlineStoreRow {
             feature_view_name: "driver_hourly_stats".to_string(),
             entity_key: HashEntityKey(entity_key),

@@ -84,7 +84,7 @@ impl FeatureStore {
 pub struct FeatureWithKeys<'a> {
     pub feature: &'a Feature,
     pub feature_type: FeatureType,
-    pub entity_keys: Arc<Vec<EntityKey>>,
+    pub entity_keys: Arc<Vec<Arc<EntityKey>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -102,13 +102,13 @@ impl<'a> EntityColumnRef<'a> {
     }
 }
 
-fn entity_key_for_entity_less_feature() -> Arc<Vec<EntityKey>> {
-    Arc::new(vec![EntityKey {
+fn entity_key_for_entity_less_feature() -> Arc<Vec<Arc<EntityKey>>> {
+    Arc::new(vec![Arc::new(EntityKey {
         join_keys: vec![DUMMY_ENTITY_ID.to_string()],
         entity_values: vec![Value {
             val: Some(Val::StringVal(DUMMY_ENTITY_VAL.to_string())),
         }],
-    }])
+    })])
 }
 
 struct LookupKey {
@@ -151,7 +151,7 @@ fn feature_views_to_keys<'a>(
     lookup_mapping: &HashMap<EntityColumnRef<'a>, String>,
 ) -> Result<Vec<FeatureWithKeys<'a>>> {
     let mut result = vec![];
-    let mut key_cache: HashMap<String, Arc<Vec<EntityKey>>> = HashMap::new();
+    let mut key_cache: HashMap<String, Arc<Vec<Arc<EntityKey>>>> = HashMap::new();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
             result.push(FeatureWithKeys {
@@ -227,10 +227,10 @@ fn feature_views_to_keys<'a>(
                             .iter()
                             .map(|lookup_key| lookup_key.origin_col_name.clone())
                             .collect();
-                        entity_keys_vec.push(EntityKey {
+                        entity_keys_vec.push(Arc::new(EntityKey {
                             join_keys,
                             entity_values,
-                        });
+                        }));
                     }
                     Arc::clone(entry.insert(Arc::new(entity_keys_vec)))
                 }
@@ -276,12 +276,17 @@ mod tests {
         }
     }
 
-    fn build_entity_keys<T: ToValue>(join_keys: &[&str], entity_values: &[T]) -> Vec<EntityKey> {
+    fn build_entity_keys<T: ToValue>(
+        join_keys: &[&str],
+        entity_values: &[T],
+    ) -> Vec<Arc<EntityKey>> {
         entity_values
             .iter()
-            .map(|v| EntityKey {
-                join_keys: join_keys.iter().map(|s| s.to_string()).collect(),
-                entity_values: v.to_values(),
+            .map(|v| {
+                Arc::new(EntityKey {
+                    join_keys: join_keys.iter().map(|s| s.to_string()).collect(),
+                    entity_values: v.to_values(),
+                })
             })
             .collect()
     }

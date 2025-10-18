@@ -328,7 +328,7 @@ impl<'a> Hash for HashValue<'a> {
 /// Wrapper struct to implement custom hashing for EntityKey
 /// Used as key in HashMap for result from online store
 #[derive(Debug, Clone, PartialEq)]
-pub struct HashEntityKey(pub EntityKey);
+pub struct HashEntityKey(pub Arc<EntityKey>);
 
 impl Hash for HashEntityKey {
     fn hash<H: Hasher>(&self, state: &mut H) {

@@ -193,6 +193,7 @@ mod tests {
     use anyhow::Result;
     use redis::aio::ConnectionManager;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     impl super::RedisOnlineStore {
         async fn new(project: String, connection_pool: ConnectionManager) -> Result<Self> {
@@ -210,12 +211,12 @@ mod tests {
         let con = client.get_connection_manager().await?;
         let redis_store = super::RedisOnlineStore::new("careful_tomcat".to_string(), con).await?;
         let arg = HashMap::from([(
-            HashEntityKey(EntityKey {
+            HashEntityKey(Arc::new(EntityKey {
                 join_keys: vec!["driver_id".to_string()],
                 entity_values: vec![Value {
                     val: Some(Val::Int64Val(1005)),
                 }],
-            }),
+            })),
             vec![
                 Feature::new("driver_hourly_stats".to_string(), "conv_rate".to_string()),
                 Feature::new("driver_hourly_stats".to_string(), "acc_rate".to_string()),

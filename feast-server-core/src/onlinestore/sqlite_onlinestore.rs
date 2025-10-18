@@ -11,6 +11,7 @@ use prost::Message;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tokio::task::JoinSet;
 
 pub struct ConnectionOptions {
@@ -67,7 +68,7 @@ impl SqliteStoreRow {
             })?;
         Ok(OnlineStoreRow {
             feature_view_name: feature_view_name.to_owned(),
-            entity_key: HashEntityKey(entity_key),
+            entity_key: HashEntityKey(Arc::new(entity_key)),
             feature_name,
             value: decoded_value,
             event_ts,
@@ -226,12 +227,12 @@ mod test {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
 
-        let entity_key = EntityKey {
+        let entity_key = Arc::new(EntityKey {
             join_keys: vec!["driver_id".to_string()],
             entity_values: vec![Value {
                 val: Some(Val::Int64Val(1005)),
             }],
-        };
+        });
 
         let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from([(
             HashEntityKey(entity_key),
