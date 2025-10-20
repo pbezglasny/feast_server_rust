@@ -33,4 +33,6 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: pbezglasny/feast-server-rust:${{ steps.extract_version.outputs.version }}
+          tags: |
+            pbezglasny/feast-server-rust:${{ steps.extract_version.outputs.version }}
+            pbezglasny/feast-server-rust:latest

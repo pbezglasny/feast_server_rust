@@ -21,6 +21,7 @@ async fn main() -> Result<()> {
     let cli_opts = CliOptions::parse();
     let CliOptions {
         chdir,
+        help: _,
         log_level,
         feature_store_yaml,
         command,
@@ -76,6 +77,7 @@ async fn main() -> Result<()> {
                     other
                 ));
             }
+            tracing::info!("Start serving on {}:{} using {}", host, port, r#type);
             let tls_enabled = key.is_some() && cert.is_some();
             let registry = feast_server_core::registry::get_registry(
                 &repo_config.registry,
@@ -133,8 +135,9 @@ async fn main() -> Result<()> {
                     };
                     #[cfg(unix)]
                     {
-                        let mut sigterm =
-                            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+                        let mut sigterm = tokio::signal::unix::signal(
+                            tokio::signal::unix::SignalKind::terminate(),
+                        )?;
                         tokio::select! {
                             res = grpc_server::server::start_server(server_config, feature_store) => {
                                 res?
