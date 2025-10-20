@@ -2,7 +2,6 @@ use crate::cli_options::{CliCommand, CliOptions};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use feast_server_core::config::{Provider, RepoConfig};
-use saphyr::{LoadableYamlNode, Yaml};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -51,11 +50,7 @@ async fn main() -> Result<()> {
         .unwrap_or(DEFAULT_FEATURE_STORE_FILE_NAME.to_string());
     let config_path = cwd.join(&feature_store_yaml);
     let yaml_str = fs::read_to_string(&config_path)?;
-    let conf = Yaml::load_from_str(&yaml_str)?;
-    if conf.is_empty() {
-        return Err(anyhow!("Empty configuration file"));
-    }
-    let repo_config = RepoConfig::try_from(&conf[0])?;
+    let repo_config = RepoConfig::from_yaml_str(&yaml_str)?;
 
     match command {
         CliCommand::Serve {

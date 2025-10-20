@@ -1,15 +1,46 @@
-use anyhow::Error;
 use anyhow::{Result, anyhow};
-use saphyr::{Scalar, Yaml};
+use serde::de::Deserializer;
+use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Provider {
     Local,
     AWS,
     GCP,
     Unknown(String),
+}
+
+impl Serialize for Provider {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Provider::Local => serializer.serialize_str("local"),
+            Provider::AWS => serializer.serialize_str("aws"),
+            Provider::GCP => serializer.serialize_str("gcp"),
+            Provider::Unknown(other) => serializer.serialize_str(other.as_str()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Provider {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        let normalized = value.to_ascii_lowercase();
+        let provider = match normalized.as_str() {
+            "local" => Provider::Local,
+            "aws" => Provider::AWS,
+            "gcp" => Provider::GCP,
+            _ => Provider::Unknown(value),
+        };
+        Ok(provider)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -21,6 +52,7 @@ pub enum RegistryType {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(from = "RegistryConfigDef")]
 pub struct RegistryConfig {
     pub path: String,
     pub cache_ttl_seconds: Option<u64>,
@@ -29,6 +61,55 @@ pub struct RegistryConfig {
     pub user: Option<String>,
     pub password: Option<String>,
     pub role: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+enum RegistryConfigDef {
+    Path(String),
+    Detailed {
+        path: String,
+        #[serde(default)]
+        cache_ttl_seconds: Option<u64>,
+        #[serde(default)]
+        registry_type: Option<RegistryType>,
+        #[serde(default)]
+        account: Option<String>,
+        #[serde(default)]
+        user: Option<String>,
+        #[serde(default)]
+        password: Option<String>,
+        #[serde(default)]
+        role: Option<String>,
+    },
+}
+
+impl From<RegistryConfigDef> for RegistryConfig {
+    fn from(value: RegistryConfigDef) -> Self {
+        match value {
+            RegistryConfigDef::Path(path) => RegistryConfig {
+                path,
+                ..Default::default()
+            },
+            RegistryConfigDef::Detailed {
+                path,
+                cache_ttl_seconds,
+                registry_type,
+                account,
+                user,
+                password,
+                role,
+            } => RegistryConfig {
+                path,
+                cache_ttl_seconds,
+                registry_type: registry_type.unwrap_or_default(),
+                account,
+                user,
+                password,
+                role,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -40,6 +121,7 @@ pub enum OnlineStoreType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum OnlineStoreConfig {
     Sqlite { path: String },
     // TODO add other redis configs: key_ttl_seconds, redis_type[cluster or not], sentinel_master
@@ -47,10 +129,43 @@ pub enum OnlineStoreConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "u64", into = "u64")]
 pub enum EntityKeySerializationVersion {
     V1,
     V2,
     V3,
+}
+
+impl Default for EntityKeySerializationVersion {
+    fn default() -> Self {
+        EntityKeySerializationVersion::V2
+    }
+}
+
+impl From<EntityKeySerializationVersion> for u64 {
+    fn from(value: EntityKeySerializationVersion) -> Self {
+        match value {
+            EntityKeySerializationVersion::V1 => 1,
+            EntityKeySerializationVersion::V2 => 2,
+            EntityKeySerializationVersion::V3 => 3,
+        }
+    }
+}
+
+impl TryFrom<u64> for EntityKeySerializationVersion {
+    type Error = String;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(EntityKeySerializationVersion::V1),
+            2 => Ok(EntityKeySerializationVersion::V2),
+            3 => Ok(EntityKeySerializationVersion::V3),
+            _ => Err(format!(
+                "unsupported entity_key_serialization_version {}",
+                value
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,196 +175,17 @@ pub struct RepoConfig {
     pub provider: Option<Provider>,
     pub registry: RegistryConfig,
     pub online_store: OnlineStoreConfig,
+    #[serde(default)]
     pub entity_key_serialization_version: EntityKeySerializationVersion,
 }
 
-impl TryFrom<&Yaml<'_>> for RegistryConfig {
-    type Error = Error;
-    fn try_from(yaml: &Yaml) -> Result<RegistryConfig> {
-        match yaml {
-            Yaml::Value(val) => {
-                let s = val
-                    .as_str()
-                    .ok_or(anyhow!("Expected string for registry path"))?;
-                let config = RegistryConfig {
-                    path: s.to_string(),
-                    ..Default::default()
-                };
-                Ok(config)
-            }
-            Yaml::Mapping(map) => {
-                let mut config = RegistryConfig::default();
-                for (key, value) in map {
-                    if let Yaml::Value(Scalar::String(key_str)) = key {
-                        match key_str.as_ref() {
-                            "path" => {
-                                if let Yaml::Value(Scalar::String(path_str)) = value {
-                                    config.path = path_str.to_string();
-                                } else {
-                                    return Err(anyhow!("Expected string for registry path"));
-                                }
-                            }
-                            "cache_ttl_seconds" => {
-                                if let Yaml::Value(Scalar::Integer(ttl)) = value {
-                                    config.cache_ttl_seconds = Some(*ttl as u64);
-                                } else {
-                                    return Err(anyhow!("Expected integer for cache_ttl_seconds"));
-                                }
-                            }
-                            "registry_type" => {
-                                if let Yaml::Value(Scalar::String(type_str)) = value {
-                                    config.registry_type = match type_str.as_ref() {
-                                        "file" => RegistryType::File,
-                                        "sql" => RegistryType::Sql,
-                                        _ => {
-                                            return Err(anyhow!("Invalid registry_type value"));
-                                        }
-                                    };
-                                } else {
-                                    return Err(anyhow!("Expected string for registry_type"));
-                                }
-                            }
-                            "account" => {
-                                if let Yaml::Value(Scalar::String(account_str)) = value {
-                                    config.account = Some(account_str.to_string());
-                                } else {
-                                    return Err(anyhow!("Expected string for account"));
-                                }
-                            }
-                            "user" => {
-                                if let Yaml::Value(Scalar::String(user_str)) = value {
-                                    config.user = Some(user_str.to_string());
-                                } else {
-                                    return Err(anyhow!("Expected string for user"));
-                                }
-                            }
-                            "password" => {
-                                if let Yaml::Value(Scalar::String(password_str)) = value {
-                                    config.password = Some(password_str.to_string());
-                                } else {
-                                    return Err(anyhow!("Expected string for password"));
-                                }
-                            }
-                            "role" => {
-                                if let Yaml::Value(Scalar::String(role_str)) = value {
-                                    config.role = Some(role_str.to_string());
-                                } else {
-                                    return Err(anyhow!("Expected string for role"));
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        return Err(anyhow!("Invalid key type in registry mapping"));
-                    }
-                }
-                Ok(config)
-            }
-            _ => Err(anyhow!("Invalid YAML for RegistryConfig"))?,
+impl RepoConfig {
+    pub fn from_yaml_str(yaml: &str) -> Result<Self> {
+        if yaml.trim().is_empty() {
+            return Err(anyhow!("Empty configuration file"));
         }
-    }
-}
-
-impl TryFrom<&Yaml<'_>> for OnlineStoreConfig {
-    type Error = Error;
-    fn try_from(yaml: &Yaml) -> Result<OnlineStoreConfig> {
-        match yaml {
-            Yaml::Mapping(map) => {
-                let store_type = map.get(&Yaml::Value(Scalar::String("type".into())));
-                if store_type.is_none() {
-                    return Err(anyhow!("Missing 'type' field for online store"));
-                }
-                let store_type = store_type.unwrap();
-                if let Yaml::Value(Scalar::String(type_str)) = store_type {
-                    match type_str.as_ref() {
-                        "sqlite" => {
-                            let path = map.get(&Yaml::Value(Scalar::String("path".into())));
-                            if let Some(Yaml::Value(Scalar::String(path_str))) = path {
-                                Ok(OnlineStoreConfig::Sqlite {
-                                    path: path_str.to_string(),
-                                })
-                            } else {
-                                Err(anyhow!("Expected string for sqlite path"))
-                            }
-                        }
-                        "redis" => {
-                            let connection_string_conf =
-                                map.get(&Yaml::Value(Scalar::String("connection_string".into())));
-                            if let Some(Yaml::Value(Scalar::String(connection_string))) =
-                                connection_string_conf
-                            {
-                                Ok(OnlineStoreConfig::Redis {
-                                    connection_string: connection_string.to_string(),
-                                })
-                            } else {
-                                Err(anyhow!(
-                                    "Expected string for redis host and integer for port"
-                                ))
-                            }
-                        }
-                        _ => Err(anyhow!("Unsupported online store type")),
-                    }
-                } else {
-                    Err(anyhow!("Expected string for online store type"))
-                }
-            }
-            _ => Err(anyhow!("Invalid YAML for OnlineStoreConfig")),
-        }
-    }
-}
-
-impl TryFrom<&Yaml<'_>> for RepoConfig {
-    type Error = Error;
-    fn try_from(yaml: &Yaml) -> Result<RepoConfig> {
-        let mapping = yaml
-            .as_mapping()
-            .ok_or(anyhow!("Expected mapping for RepoConfig"))?;
-        let project = mapping
-            .get(&Yaml::Value(Scalar::String("project".into())))
-            .and_then(|v| v.as_str())
-            .ok_or(anyhow!("Missing or invalid 'project' field"))?
-            .to_string();
-        let project_description = mapping
-            .get(&Yaml::Value(Scalar::String("project_description".into())))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let provider = mapping
-            .get(&Yaml::Value(Scalar::String("provider".into())))
-            .and_then(|v| v.as_str())
-            .map(|s| match s.to_lowercase().as_str() {
-                "local" => Provider::Local,
-                "aws" => Provider::AWS,
-                "gcp" => Provider::GCP,
-                other => Provider::Unknown(other.to_string()),
-            });
-        let registry_yaml = mapping
-            .get(&Yaml::Value(Scalar::String("registry".into())))
-            .ok_or(anyhow!("Missing 'registry' field"))?;
-        let registry = RegistryConfig::try_from(registry_yaml)?;
-        let online_store_yaml = mapping
-            .get(&Yaml::Value(Scalar::String("online_store".into())))
-            .ok_or(anyhow!("Missing 'online_store' field"))?;
-        let online_store = OnlineStoreConfig::try_from(online_store_yaml)?;
-        let entity_key_serialization_num = mapping
-            .get(&Yaml::Value(Scalar::String(
-                "entity_key_serialization_version".into(),
-            )))
-            .and_then(|v| v.as_integer())
-            .unwrap_or(2);
-        let entity_key_serialization_version = match entity_key_serialization_num {
-            1 => EntityKeySerializationVersion::V1,
-            2 => EntityKeySerializationVersion::V2,
-            3 => EntityKeySerializationVersion::V3,
-            _ => return Err(anyhow!("Unsupported entity_key_serialization_version")),
-        };
-        Ok(RepoConfig {
-            project,
-            project_description,
-            provider,
-            registry,
-            online_store,
-            entity_key_serialization_version,
-        })
+        let config: RepoConfig = serde_saphyr::from_str(yaml).map_err(|err| anyhow!(err))?;
+        Ok(config)
     }
 }
 
@@ -257,7 +193,6 @@ impl TryFrom<&Yaml<'_>> for RepoConfig {
 mod tests {
     use super::*;
 
-    use saphyr::{LoadableYamlNode, Yaml};
     use std::fs;
 
     #[test]
@@ -265,8 +200,7 @@ mod tests {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let config_path = format!("{}/test_data/local_sqlite.yaml", project_dir);
         let yaml_str = fs::read_to_string(config_path)?;
-        let conf = Yaml::load_from_str(&yaml_str)?;
-        let repo_config = RepoConfig::try_from(&conf[0])?;
+        let repo_config = RepoConfig::from_yaml_str(&yaml_str)?;
         assert_eq!(repo_config.project, "local_sqlite");
         let mut expected_registry = RegistryConfig::default();
         expected_registry.registry_type = RegistryType::File;
@@ -288,8 +222,7 @@ mod tests {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let config_path = format!("{}/test_data/local_redis.yaml", project_dir);
         let yaml_str = fs::read_to_string(config_path)?;
-        let conf = Yaml::load_from_str(&yaml_str)?;
-        let repo_config = RepoConfig::try_from(&conf[0])?;
+        let repo_config = RepoConfig::from_yaml_str(&yaml_str)?;
         assert_eq!(repo_config.project, "local_redis");
         let mut expected_registry = RegistryConfig::default();
         expected_registry.registry_type = RegistryType::File;

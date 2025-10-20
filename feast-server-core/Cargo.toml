@@ -10,11 +10,11 @@ doctest = false
 [dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true }
-saphyr = { workspace = true }
 tracing = { workspace = true }
 prost = { version = "0.14.1", features = ["default", "derive"] }
 prost-types = "0.14.1"
 serde = { version = "1.0.219", features = ["default", "derive"] }
+serde-saphyr = { workspace = true }
 async-trait = { version = "0.1.89" }
 arc-swap = { version = "1.7.1" }
 chrono = { version = "0.4.42", features = ["default", "serde"] }

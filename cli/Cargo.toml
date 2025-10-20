@@ -13,7 +13,6 @@ rest-server = { path = "../rest-server" }
 grpc-server = { path = "../grpc-server" }
 anyhow = { workspace = true }
 tokio = { workspace = true }
-saphyr = { workspace = true }
 tracing = {workspace = true}
 clap = { version = "4.4.7", features = ["derive"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
