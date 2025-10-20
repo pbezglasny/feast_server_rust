@@ -2,13 +2,13 @@ use crate::config::OnlineStoreConfig;
 use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
 use prost_types::Timestamp;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, ErrorKind, FromRedisValue, RedisResult, Value as RedisValue};
+use redis::{AsyncCommands, FromRedisValue};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -46,11 +46,22 @@ impl RedisOnlineStore {
 
     pub async fn from_connection_string(project: String, connection_string: &str) -> Result<Self> {
         let connection_info = add_redis_prefix_to_connection_string(connection_string);
-        let connection_pool = ConnectionManager::new(
-            redis::Client::open(connection_info.as_str())
-                .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?,
-        )
-        .await?;
+        let client = redis::Client::open(connection_info.as_str())
+            .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?;
+
+        let mut conn = client.get_connection()?;
+        let ping_response: String = redis::cmd("PING").query(&mut conn)?;
+        match ping_response.as_str().to_uppercase().as_str() {
+            "PONG" => {}
+            other => {
+                return Err(anyhow!(
+                    "Failed to connect to Redis online store, unexpected PING response: {}",
+                    other
+                ));
+            }
+        }
+        let connection_pool = ConnectionManager::new(client).await?;
+
         Ok(Self {
             project,
             connection_pool,
