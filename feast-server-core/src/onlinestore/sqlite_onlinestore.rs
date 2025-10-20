@@ -150,8 +150,17 @@ impl OnlineStore for SqliteOnlineStore {
                 for feature_name in features {
                     sqlx_query = sqlx_query.bind(feature_name);
                 }
-                let result: Vec<SqliteStoreRow> = sqlx_query.fetch_all(&mut *connection).await?;
-                result
+                let rows: Vec<SqliteStoreRow> =
+                    match sqlx_query.fetch_all(&mut *connection).await {
+                        Ok(rows) => rows,
+                        Err(sqlx::Error::Database(db_err))
+                            if db_err.message().contains("no such table") =>
+                        {
+                            return Ok(Vec::new());
+                        }
+                        Err(err) => return Err(err.into()),
+                    };
+                rows
                     .into_iter()
                     .map(|r| r.try_into_online_store_row(&view_name))
                     .collect::<Result<Vec<_>>>()
