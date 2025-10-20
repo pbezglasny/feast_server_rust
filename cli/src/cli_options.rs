@@ -74,7 +74,7 @@ pub struct CliOptions {
     /// Can also be set via the FEATURE_REPO_DIR_ENV_VAR environment variable.
     pub chdir: Option<String>,
     /// Print help information
-    #[arg(long = "help", action = ArgAction::Help, help = "Print help information")]
+    #[arg(long = "help", action = ArgAction::Help)]
     pub help: Option<bool>,
     /// The logging level. Case-insensitive.
     #[arg(
