@@ -49,7 +49,7 @@ docker build -t feast-feature-server-rust:latest .
 1. Point the CLI at a feature repository. Either change into the repo directory or pass it explicitly:
    ```bash
    FEATURE_REPO_DIR_ENV_VAR=<path-to-your-feature-repo> \
-   cargo run -p cli -- serve -n 0.0.0.0 -p 6566
+   cargo run -p cli -- serve -h 0.0.0.0 -p 6566
    ```
    You can also use `--chdir <path>` or `--feature-store-yaml <file>` to override the repository root and
    `feature_store.yaml` filename. These options can also be set via the `FEATURE_REPO_DIR_ENV_VAR` and
