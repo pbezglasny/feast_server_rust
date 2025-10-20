@@ -2,7 +2,7 @@ use crate::config::OnlineStoreConfig;
 use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
@@ -49,16 +49,16 @@ impl RedisOnlineStore {
         let client = redis::Client::open(connection_info.as_str())
             .map_err(|e| anyhow!("Failed to create Redis client: {}", e))?;
 
-        let mut conn = client.get_connection()?;
-        let ping_response: String = redis::cmd("PING").query(&mut conn)?;
-        match ping_response.as_str().to_uppercase().as_str() {
-            "PONG" => {}
-            other => {
-                return Err(anyhow!(
-                    "Failed to connect to Redis online store, unexpected PING response: {}",
-                    other
-                ));
-            }
+        let mut conn = client
+            .get_multiplexed_async_connection()
+            .await
+            .with_context(|| anyhow!("Cannot establish redis connection"))?;
+        let ping_response: String = redis::cmd("PING").query_async(&mut conn).await?;
+        if ping_response.to_uppercase() != "PONG" {
+            return Err(anyhow!(
+                "Failed to connect to Redis online store, unexpected PING response: {}",
+                ping_response
+            ));
         }
         let connection_pool = ConnectionManager::new(client).await?;
 
