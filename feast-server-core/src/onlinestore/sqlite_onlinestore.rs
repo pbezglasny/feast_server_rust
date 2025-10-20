@@ -153,7 +153,7 @@ impl OnlineStore for SqliteOnlineStore {
                 match sqlx_query.fetch_all(&mut *connection).await {
                     Ok(rows) => rows
                         .into_iter()
-                        .map(|r| r.try_into_online_store_row(&view_name))
+                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(&view_name))
                         .collect::<Result<Vec<_>>>(),
                     Err(sqlx::Error::Database(db_err))
                         if db_err.message().contains("no such table") =>
