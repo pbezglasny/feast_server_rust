@@ -1,2 +1,0 @@
-user default off
-user app on >apppassword ~* +@all
