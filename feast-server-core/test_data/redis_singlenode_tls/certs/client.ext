@@ -1,0 +1,3 @@
+subjectAltName = DNS:redis-client, DNS:localhost, IP:127.0.0.1
+extendedKeyUsage = clientAuth
+keyUsage = digitalSignature
