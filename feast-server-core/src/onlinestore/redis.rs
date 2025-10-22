@@ -230,9 +230,7 @@ impl TryFrom<RedisConnectionOption> for ClusterClient {
             hosts: _,
             common_options,
         } = value;
-        if let Some(enabled) = common_options.ssl
-            && enabled
-        {
+        if common_options.ssl == Some(true) {
             let certificates = TlsCertificates::try_from(&common_options)?;
             builder = builder.certs(certificates);
         }
