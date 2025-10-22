@@ -2,7 +2,6 @@ use crate::config::{OnlineStoreConfig, RedisType};
 use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
-use crate::util::read_file_to_bytes;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -131,8 +130,8 @@ impl TryFrom<&CommonConnectionOptions> for TlsCertificates {
             (value.ssl_certfile.clone(), value.ssl_keyfile.clone())
         {
             Some(ClientTlsConfig {
-                client_cert: read_file_to_bytes(&cert)?,
-                client_key: read_file_to_bytes(&key)?,
+                client_cert: std::fs::read(&cert)?,
+                client_key: std::fs::read(&key)?,
             })
         } else {
             None
@@ -142,7 +141,7 @@ impl TryFrom<&CommonConnectionOptions> for TlsCertificates {
             root_cert: value
                 .ssl_ca_certs
                 .clone()
-                .map(|cert_path| read_file_to_bytes(&cert_path))
+                .map(|cert_path| std::fs::read(&cert_path))
                 .transpose()?,
         })
     }
@@ -246,7 +245,8 @@ impl TryFrom<RedisConnectionOption> for ClusterClient {
             common_options,
         } = value;
         if common_options.ssl == Some(true) {
-            CryptoProvider::install_default(rustls::crypto::ring::default_provider())?;
+            CryptoProvider::install_default(rustls::crypto::ring::default_provider())
+                .map_err(|_| anyhow!("Cannot initialize TLS provider"))?;
             let certificates = TlsCertificates::try_from(&common_options)?;
             builder = builder.certs(certificates);
         }
@@ -323,9 +323,11 @@ pub async fn new(
         RedisType::SingleNode => {
             let connection_option = parse_redis_connection_string(&connection_string)?;
             let client = if connection_option.common_options.ssl == Some(true) {
-                CryptoProvider::install_default(rustls::crypto::ring::default_provider())?;
+                CryptoProvider::install_default(rustls::crypto::ring::default_provider())
+                    .map_err(|_| anyhow!("Cannot initialize TLS provider"))?;
                 let certificates = TlsCertificates::try_from(&connection_option.common_options)?;
-                let single_node_option = SingleNodeConnectionOption::try_from(connection_option.clone())?;
+                let single_node_option =
+                    SingleNodeConnectionOption::try_from(connection_option.clone())?;
                 Client::build_with_tls(single_node_option, certificates)?
             } else {
                 let single_node_option = SingleNodeConnectionOption::try_from(connection_option)?;
@@ -508,10 +510,8 @@ mod tests {
     use crate::feast::types::{EntityKey, Value};
     use crate::model::{Feature, HashEntityKey};
     use crate::onlinestore::OnlineStore;
-    use anyhow::{Result, anyhow};
+    use anyhow::Result;
     use redis::aio::ConnectionManager;
-    use redis::cluster::ClusterClientBuilder;
-    use rustls::crypto::CryptoProvider;
     use std::collections::HashMap;
     use std::sync::Arc;
 
