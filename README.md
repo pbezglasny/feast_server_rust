@@ -1,6 +1,6 @@
 # Feast Feature Server (Rust)
 
-Rust implementation of the Feast feature server.
+Unofficial Rust implementation of the Feast feature server with focus on performance.
 
 ## Currently supported features
 
