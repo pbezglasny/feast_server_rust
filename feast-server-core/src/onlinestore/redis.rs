@@ -31,7 +31,7 @@ fn parse_redis_connection_string(connection_string: &str) -> Result<RedisConnect
     let mut result = RedisConnectionOption::default();
     let mut common_options = CommonConnectionOptions::default();
     for (i, part) in connection_string.split(',').enumerate() {
-        if part.contains(":") && part.matches(":").count() == 1 {
+        if part.contains(':') && part.matches(':').count() == 1 {
             if let Some((host, port_str)) = part.split_once(":") {
                 let port = port_str
                     .parse::<u16>()
