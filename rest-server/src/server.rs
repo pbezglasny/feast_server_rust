@@ -145,6 +145,7 @@ async fn handle_feature_request(
         .await
         .map(Json)
         .map_err(|err| {
+            tracing::error!("{}", err);
             if let Some(feast_error) = err.downcast_ref::<FeastCoreError>()
                 && feast_error.is_not_found()
             {

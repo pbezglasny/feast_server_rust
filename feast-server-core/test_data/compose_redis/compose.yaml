@@ -1,0 +1,110 @@
+version: '3'
+
+networks:
+  redis-cluster-compose:
+    driver: bridge
+
+services:
+  redis-node-1:
+    image: redis:latest
+    ports:
+      - "7000:7000"
+    networks:
+      - redis-cluster-compose
+    hostname: redis-node-1
+    volumes:
+      - ./7000:/redis
+      - ./users.acl:/redis/users.acl:ro
+    command: redis-server /redis/redis.conf
+  redis-node-2:
+    image: redis:latest
+    ports:
+      - "7001:7000"
+    networks:
+      - redis-cluster-compose
+    hostname: redis-node-2
+    volumes:
+      - ./7001:/redis
+      - ./users.acl:/redis/users.acl:ro
+    command: redis-server /redis/redis.conf
+
+  redis-node-3:
+    image: redis:latest
+    ports:
+      - "7002:7000"
+    networks:
+      - redis-cluster-compose
+    hostname: redis-node-3
+    volumes:
+      - ./7002:/redis
+      - ./users.acl:/redis/users.acl:ro
+    command: redis-server /redis/redis.conf
+
+  redis-node-4:
+    image: redis:latest
+    ports:
+      - "7003:7000"
+    networks:
+      - redis-cluster-compose
+    hostname: redis-node-4
+    volumes:
+      - ./7003:/redis
+      - ./users.acl:/redis/users.acl:ro
+    command: redis-server /redis/redis.conf
+
+  redis-node-5:
+    image: redis:latest
+    ports:
+      - "7004:7000"
+    networks:
+      - redis-cluster-compose
+    hostname: redis-node-5
+    volumes:
+      - ./7004:/redis
+      - ./users.acl:/redis/users.acl:ro
+    command: redis-server /redis/redis.conf
+
+  redis-node-6:
+    image: redis:latest
+    ports:
+      - "7005:7000"
+    networks:
+      - redis-cluster-compose
+    hostname: redis-node-6
+    volumes:
+      - ./7005:/redis
+      - ./users.acl:/redis/users.acl:ro
+    command: redis-server /redis/redis.conf
+
+  redis-cluster-creator:
+    image: redis:latest
+    ports:
+      - "6999:6999"
+    networks:
+      - redis-cluster-compose
+    command: >
+      sleep 5 &&
+      redis-cli -a apppassword --user app 
+      -p 7000 --cluster 
+      create redis-node-1:7000 redis-node-2:7000
+      redis-node-3:7000 redis-node-4:7000 
+      redis-node-5:7000 redis-node-6:7000 
+      --cluster-replicas 1 --cluster-yes
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+      - redis-node-4
+      - redis-node-5
+      - redis-node-6
+
+  redis-insight:
+    image: redis/redisinsight
+    ports:
+      - "8001:8001"
+    networks:
+      - redis-cluster-compose
+    volumes:
+      - ./redisinsight:/db
+    depends_on:
+      - redis-cluster-creator

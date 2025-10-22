@@ -120,12 +120,27 @@ pub enum OnlineStoreType {
     DynamoDB,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RedisType {
+    #[default]
+    SingleNode,
+    RedisCluster,
+    Sentinel,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OnlineStoreConfig {
-    Sqlite { path: String },
-    // TODO add other redis configs: key_ttl_seconds, redis_type[cluster or not], sentinel_master
-    Redis { connection_string: String },
+    Sqlite {
+        path: String,
+    },
+    Redis {
+        #[serde(default)]
+        redis_type: RedisType,
+        connection_string: String,
+        sentinel_master: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -229,7 +244,9 @@ mod tests {
         expected_registry.path = "data/redis_registry.db".to_string();
         assert_eq!(repo_config.registry, expected_registry);
         let expected_online_store = OnlineStoreConfig::Redis {
+            redis_type: RedisType::SingleNode,
             connection_string: "localhost:6379".to_string(),
+            sentinel_master: None,
         };
         assert_eq!(repo_config.online_store, expected_online_store);
         assert_eq!(
