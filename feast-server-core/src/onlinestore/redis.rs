@@ -246,7 +246,7 @@ impl TryFrom<RedisConnectionOption> for ClusterClient {
             common_options,
         } = value;
         if common_options.ssl == Some(true) {
-            let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
+            CryptoProvider::install_default(rustls::crypto::ring::default_provider())?;
             let certificates = TlsCertificates::try_from(&common_options)?;
             builder = builder.certs(certificates);
         }
