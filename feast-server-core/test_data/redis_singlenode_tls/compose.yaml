@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  redis-tls:
+    user: "1000:1000"
+    image: redis
+    ports:
+      - "7010:7010"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - ./certs:/usr/local/etc/redis/certs/
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]

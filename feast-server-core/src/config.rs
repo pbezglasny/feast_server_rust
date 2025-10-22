@@ -143,18 +143,13 @@ pub enum OnlineStoreConfig {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "u64", into = "u64")]
 pub enum EntityKeySerializationVersion {
     V1,
     V2,
+    #[default]
     V3,
-}
-
-impl Default for EntityKeySerializationVersion {
-    fn default() -> Self {
-        EntityKeySerializationVersion::V2
-    }
 }
 
 impl From<EntityKeySerializationVersion> for u64 {
