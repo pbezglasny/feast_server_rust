@@ -15,6 +15,7 @@ use redis::{
     AsyncCommands, Client, ClientTlsConfig, ConnectionAddr, ConnectionInfo, FromRedisValue,
     IntoConnectionInfo, RedisConnectionInfo, RedisResult, TlsCertificates,
 };
+use rustls::crypto::CryptoProvider;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -114,19 +115,6 @@ struct CommonConnectionOptions {
     ssl_ca_certs: Option<String>,
 }
 
-#[derive(Debug, Default, Clone)]
-struct RedisConnectionOption {
-    hosts: Vec<(String, u16)>,
-    common_options: CommonConnectionOptions,
-}
-
-#[derive(Debug, Default, Clone)]
-struct SingleNodeConnectionOption {
-    host: String,
-    port: u16,
-    common_options: CommonConnectionOptions,
-}
-
 impl TryFrom<&CommonConnectionOptions> for TlsCertificates {
     type Error = anyhow::Error;
 
@@ -160,10 +148,23 @@ impl TryFrom<&CommonConnectionOptions> for TlsCertificates {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+struct RedisConnectionOption {
+    hosts: Vec<(String, u16)>,
+    common_options: CommonConnectionOptions,
+}
+
+#[derive(Debug, Default, Clone)]
+struct SingleNodeConnectionOption {
+    host: String,
+    port: u16,
+    common_options: CommonConnectionOptions,
+}
+
 impl TryFrom<RedisConnectionOption> for SingleNodeConnectionOption {
     type Error = anyhow::Error;
 
-    fn try_from(value: RedisConnectionOption) -> Result<Self, Self::Error> {
+    fn try_from(value: RedisConnectionOption) -> Result<Self> {
         if value.hosts.len() != 1 {
             return Err(anyhow!(
                 "Expected single host for SingleNodeConnectionOption, got {}",
@@ -181,13 +182,24 @@ impl TryFrom<RedisConnectionOption> for SingleNodeConnectionOption {
 
 impl IntoConnectionInfo for SingleNodeConnectionOption {
     fn into_connection_info(self) -> RedisResult<ConnectionInfo> {
-        let mut redis = RedisConnectionInfo::default();
-        redis.username = self.common_options.username;
-        redis.password = self.common_options.password;
+        let mut redis = RedisConnectionInfo {
+            username: self.common_options.username,
+            password: self.common_options.password,
+            ..Default::default()
+        };
         if let Some(db) = self.common_options.db {
             redis.db = db;
         }
-        let addr: ConnectionAddr = ConnectionAddr::Tcp(self.host, self.port);
+        let addr: ConnectionAddr = if Some(true) == self.common_options.ssl {
+            ConnectionAddr::TcpTls {
+                host: self.host,
+                port: self.port,
+                insecure: false,
+                tls_params: None,
+            }
+        } else {
+            ConnectionAddr::Tcp(self.host, self.port)
+        };
         Ok(ConnectionInfo { addr, redis })
     }
 }
@@ -234,6 +246,7 @@ impl TryFrom<RedisConnectionOption> for ClusterClient {
             common_options,
         } = value;
         if common_options.ssl == Some(true) {
+            let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
             let certificates = TlsCertificates::try_from(&common_options)?;
             builder = builder.certs(certificates);
         }
@@ -309,9 +322,15 @@ pub async fn new(
     match redis_type {
         RedisType::SingleNode => {
             let connection_option = parse_redis_connection_string(&connection_string)?;
-            let certificates = TlsCertificates::try_from(&connection_option.common_options)?;
-            let single_node_option = SingleNodeConnectionOption::try_from(connection_option)?;
-            let client = Client::build_with_tls(single_node_option, certificates)?;
+            let client = if connection_option.common_options.ssl == Some(true) {
+                let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
+                let certificates = TlsCertificates::try_from(&connection_option.common_options)?;
+                let single_node_option = SingleNodeConnectionOption::try_from(connection_option)?;
+                Client::build_with_tls(single_node_option, certificates)?
+            } else {
+                let single_node_option = SingleNodeConnectionOption::try_from(connection_option)?;
+                Client::open(single_node_option)?
+            };
 
             check_redis_connection(&client).await?;
             let connection_pool = ConnectionManager::new(client).await?;
@@ -484,13 +503,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::new;
     use crate::feast::types::value::Val;
     use crate::feast::types::{EntityKey, Value};
     use crate::model::{Feature, HashEntityKey};
     use crate::onlinestore::OnlineStore;
-    use anyhow::Result;
+    use anyhow::{Result, anyhow};
     use redis::aio::ConnectionManager;
     use redis::cluster::ClusterClientBuilder;
+    use rustls::crypto::CryptoProvider;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -535,6 +556,25 @@ mod tests {
 
         let result = redis_store.get_feature_values(arg).await?;
         println!("result: {:?}", result);
+        Ok(())
+    }
+    #[tokio::test]
+    #[ignore]
+    async fn tls_connection_test() -> Result<()> {
+        let project_dir = env!("CARGO_MANIFEST_DIR");
+        let online_store = new(
+            "my_project".to_string(),
+            super::RedisType::SingleNode,
+            format!(
+                "127.0.0.1:7010,ssl=true,\
+            ssl_keyfile={}/test_data/redis_singlenode_tls/certs/client.key,\
+            ssl_certfile={}/test_data/redis_singlenode_tls/certs/client.crt,\
+            ssl_ca_certs={}/test_data/redis_singlenode_tls/certs/root_ca.crt",
+                project_dir, project_dir, project_dir
+            ),
+            None,
+        )
+        .await?;
         Ok(())
     }
 }
