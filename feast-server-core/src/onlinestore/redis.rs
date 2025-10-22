@@ -3,7 +3,7 @@ use crate::feast::types::Value as FeastValue;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use crate::util::read_file_to_bytes;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
@@ -58,6 +58,9 @@ fn parse_redis_connection_string(connection_string: &str) -> Result<RedisConnect
     Ok(result)
 }
 
+/// GetConnection and GetProject traits to abstract connection and project retrieval
+/// Client and connection types differ between single-node and cluster Redis,
+/// so these traits help unify the interface for OnlineStore implementations.
 trait GetConnection {
     fn get_connection(&self) -> impl ConnectionLike + Send + Sync;
 }
@@ -359,6 +362,7 @@ enum RedisRequest<'a> {
     },
 }
 
+/// Implement OnlineStore for single-node and cluster Redis online stores
 #[async_trait]
 impl<T> OnlineStore for T
 where
