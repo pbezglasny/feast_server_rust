@@ -40,7 +40,7 @@ fn parse_redis_connection_string(connection_string: &str) -> Result<RedisConnect
             } else {
                 return Err(anyhow!("Invalid connection URL of host at index {}", i));
             }
-        } else if part.contains("=") && part.matches("=").count() == 1 {
+        } else if part.contains('=') && part.matches('=').count() == 1 {
             if let Some((key, value)) = part.split_once("=") {
                 parse_common_options(&mut common_options, i, key, value)?;
             } else {
