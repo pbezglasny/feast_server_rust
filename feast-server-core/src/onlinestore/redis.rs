@@ -325,7 +325,7 @@ pub async fn new(
             let client = if connection_option.common_options.ssl == Some(true) {
                 let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
                 let certificates = TlsCertificates::try_from(&connection_option.common_options)?;
-                let single_node_option = SingleNodeConnectionOption::try_from(connection_option)?;
+                let single_node_option = SingleNodeConnectionOption::try_from(connection_option.clone())?;
                 Client::build_with_tls(single_node_option, certificates)?
             } else {
                 let single_node_option = SingleNodeConnectionOption::try_from(connection_option)?;
