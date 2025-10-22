@@ -71,12 +71,12 @@ trait GetProject {
 
 pub(crate) struct RedisSingleNodeOnlineStore {
     project: String,
-    connection_pool: ConnectionManager,
+    connection_manager: ConnectionManager,
 }
 
 impl GetConnection for RedisSingleNodeOnlineStore {
     fn get_connection(&self) -> impl ConnectionLike + Send + Sync {
-        self.connection_pool.clone()
+        self.connection_manager.clone()
     }
 }
 
@@ -88,12 +88,12 @@ impl GetProject for RedisSingleNodeOnlineStore {
 
 pub(crate) struct RedisClusterOnlineStore {
     project: String,
-    connection_pool: ClusterConnection,
+    cluster_connection: ClusterConnection,
 }
 
 impl GetConnection for RedisClusterOnlineStore {
     fn get_connection(&self) -> impl ConnectionLike + Send + Sync {
-        self.connection_pool.clone()
+        self.cluster_connection.clone()
     }
 }
 
@@ -338,7 +338,7 @@ pub async fn new(
             let connection_pool = ConnectionManager::new(client).await?;
             Ok(Arc::new(RedisSingleNodeOnlineStore {
                 project,
-                connection_pool,
+                connection_manager: connection_pool,
             }))
         }
         RedisType::RedisCluster => {
@@ -351,7 +351,7 @@ pub async fn new(
 
             Ok(Arc::new(RedisClusterOnlineStore {
                 project,
-                connection_pool,
+                cluster_connection: connection_pool,
             }))
         }
         RedisType::Sentinel => Err(anyhow!("Sentinel Redis type is not supported yet")),
@@ -522,7 +522,7 @@ mod tests {
         ) -> Result<Self> {
             Ok(Self {
                 project,
-                connection_pool,
+                connection_manager: connection_pool,
             })
         }
     }
