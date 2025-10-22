@@ -128,10 +128,13 @@ impl TryFrom<&CommonConnectionOptions> for TlsCertificates {
     type Error = anyhow::Error;
 
     fn try_from(value: &CommonConnectionOptions) -> Result<Self> {
-        if value.ssl_keyfile.is_some() ^ value.ssl_certfile.is_some() {
-            return Err(anyhow!(
-                "Both ssl_keyfile and ssl_certfile must be provided together or neither"
-            ));
+        match (value.ssl_keyfile.as_ref(), value.ssl_certfile.as_ref()) {
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(anyhow!(
+                    "Both ssl_keyfile and ssl_certfile must be provided together or neither"
+                ));
+            }
+            _ => {}
         }
         let client_tls: Option<ClientTlsConfig> = if let (Some(cert), Some(key)) =
             (value.ssl_certfile.clone(), value.ssl_keyfile.clone())
