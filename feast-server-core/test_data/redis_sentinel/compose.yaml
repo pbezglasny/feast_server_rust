@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  redis-master:
+    image: redis:latest
+    networks:
+      - redis-sentinel-network
+    ports:
+      - "7000:6379"
+    volumes:
+      - ./master.conf:/redis/redis.conf:ro
+    command: [ "redis-server", "/redis/redis.conf" ]
+
+  redis-replica-1:
+    image: redis:latest
+    networks:
+      - redis-sentinel-network
+    ports:
+      - "7001:6379"
+    depends_on:
+      - redis-master
+    volumes:
+      - ./replica1.conf:/redis/redis.conf:ro
+    command: [ "redis-server", "/redis/redis.conf" ]
+
+  redis-replica-2:
+    image: redis:latest
+    networks:
+      - redis-sentinel-network
+    ports:
+      - "7002:6379"
+    depends_on:
+      - redis-master
+    volumes:
+      - ./replica2.conf:/redis/redis.conf:ro
+    command: [ "redis-server", "/redis/redis.conf" ]
+
+  sentinel-1:
+    image: redis:latest
+    networks:
+      - redis-sentinel-network
+    ports:
+      - "26379:26379"
+    depends_on:
+      - redis-master
+      - redis-replica-1
+      - redis-replica-2
+    volumes:
+      - ./sentinel1.conf:/redis/sentinel.conf
+    command: [ "redis-server", "/redis/sentinel.conf", "--sentinel" ]
+
+
+networks:
+  redis-sentinel-network:
+    driver: bridge
