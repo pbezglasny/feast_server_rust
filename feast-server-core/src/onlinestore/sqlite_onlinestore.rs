@@ -105,20 +105,23 @@ impl OnlineStore for SqliteOnlineStore {
         &self,
         features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
-        let mut view_to_keys: HashMap<String, HashSet<Vec<u8>>> = HashMap::new();
-        let mut view_features: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut view_to_keys: HashMap<Arc<str>, HashSet<Vec<u8>>> = HashMap::new();
+        let mut view_features: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
 
         for (entity_key, feature_list) in features {
             let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
             for feature in feature_list {
-                let fv_name = feature.feature_view_name.as_ref().to_string();
+                let Feature {
+                    feature_view_name,
+                    feature_name,
+                } = feature;
                 view_features
-                    .entry(fv_name.clone())
+                    .entry(feature_view_name.clone())
                     .or_default()
-                    .insert(feature.feature_name.as_ref().to_string());
+                    .insert(feature_name);
 
                 view_to_keys
-                    .entry(fv_name)
+                    .entry(feature_view_name)
                     .or_default()
                     .insert(serialized_key.clone());
             }
@@ -148,7 +151,7 @@ impl OnlineStore for SqliteOnlineStore {
                     sqlx_query = sqlx_query.bind(key);
                 }
                 for feature_name in features {
-                    sqlx_query = sqlx_query.bind(feature_name);
+                    sqlx_query = sqlx_query.bind(feature_name.to_string());
                 }
                 match sqlx_query.fetch_all(&mut *connection).await {
                     Ok(rows) => rows
