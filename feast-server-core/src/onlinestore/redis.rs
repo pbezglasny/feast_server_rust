@@ -109,9 +109,11 @@ impl GetProject for RedisClusterOnlineStore {
 
 const SENTINEL_MASTER_SERVICE_DEFAULT_NAME: &str = "mymaster";
 
+/// Struct for Redis Sentinel Online Store
+/// Keep client field for failover reconnection logic in the future
 struct RedisSentinelOnlineStore {
     project: String,
-    client: SentinelClient,
+    _client: SentinelClient,
     connection_pool: MultiplexedConnection,
 }
 
@@ -140,7 +142,7 @@ impl TryFrom<SentinelConnectionOption> for SentinelClient {
         let addresses: Vec<ConnectionAddr> = (&value).try_into()?;
         let SentinelConnectionOption {
             service_name,
-            redis_options,
+            mut redis_options,
         } = value;
         let mut builder = SentinelClientBuilder::new(
             addresses,
@@ -152,10 +154,10 @@ impl TryFrom<SentinelConnectionOption> for SentinelClient {
             builder = builder.set_client_to_redis_certificates(certificates.clone());
             builder = builder.set_client_to_sentinel_certificates(certificates);
         }
-        if let Some(username) = redis_options.common_options.username {
+        if let Some(username) = redis_options.common_options.username.take() {
             builder = builder.set_client_to_redis_username(username);
         }
-        if let Some(password) = redis_options.common_options.password {
+        if let Some(password) = redis_options.common_options.password.take() {
             builder = builder.set_client_to_redis_password(password);
         }
         if let Some(db) = redis_options.common_options.db {
@@ -434,12 +436,20 @@ pub async fn new(
                 redis_options: connection_option,
             };
             let mut sentinel_client = SentinelClient::try_from(sentinel_options)?;
-            let client = sentinel_client.get_client()?;
-            check_redis_connection(&client).await?;
             let sentinel_connection = sentinel_client.get_async_connection().await?;
+            {
+                let mut conn_for_ping = sentinel_connection.clone();
+                let ping_response: String = conn_for_ping.ping().await?;
+                if ping_response.to_uppercase() != "PONG" {
+                    return Err(anyhow!(
+                        "Failed to connect to Redis online store, unexpected PING response: {}",
+                        ping_response
+                    ));
+                }
+            }
             Ok(Arc::new(RedisSentinelOnlineStore {
                 project,
-                client: sentinel_client,
+                _client: sentinel_client,
                 connection_pool: sentinel_connection,
             }))
         }
