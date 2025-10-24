@@ -115,6 +115,7 @@ struct RedisSentinelOnlineStore {
     connection_pool: MultiplexedConnection,
 }
 
+// TODO: Implement reconnection logic for Sentinel connections
 impl GetConnection for RedisSentinelOnlineStore {
     fn get_connection(&self) -> impl ConnectionLike + Send + Sync {
         self.connection_pool.clone()
