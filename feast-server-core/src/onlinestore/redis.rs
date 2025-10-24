@@ -7,12 +7,16 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prost::Message;
 use prost_types::Timestamp;
-use redis::aio::{ConnectionLike, ConnectionManager};
+use redis::aio::{ConnectionLike, ConnectionManager, MultiplexedConnection};
 use redis::cluster::{ClusterClient, ClusterClientBuilder};
 use redis::cluster_async::ClusterConnection;
+use redis::sentinel::SentinelServerType::Master;
+use redis::sentinel::{
+    Sentinel, SentinelClient, SentinelClientBuilder, SentinelNodeConnectionInfo, SentinelServerType,
+};
 use redis::{
-    AsyncCommands, Client, ClientTlsConfig, ConnectionAddr, ConnectionInfo, FromRedisValue,
-    IntoConnectionInfo, RedisConnectionInfo, RedisResult, TlsCertificates,
+    AsyncCommands, Client, ClientTlsConfig, Commands, ConnectionAddr, ConnectionInfo,
+    FromRedisValue, IntoConnectionInfo, RedisConnectionInfo, RedisResult, TlsCertificates, TlsMode,
 };
 use rustls::crypto::CryptoProvider;
 use std::collections::{HashMap, HashSet};
@@ -100,6 +104,102 @@ impl GetConnection for RedisClusterOnlineStore {
 impl GetProject for RedisClusterOnlineStore {
     fn get_project(&self) -> String {
         self.project.clone()
+    }
+}
+
+const SENTINEL_MASTER_SERVICE_DEFAULT_NAME: &str = "mymaster";
+
+struct RedisSentinelOnlineStore {
+    project: String,
+    client: SentinelClient,
+    connection_pool: MultiplexedConnection,
+}
+
+impl GetConnection for RedisSentinelOnlineStore {
+    fn get_connection(&self) -> impl ConnectionLike + Send + Sync {
+        self.connection_pool.clone()
+    }
+}
+
+impl GetProject for RedisSentinelOnlineStore {
+    fn get_project(&self) -> String {
+        self.project.clone()
+    }
+}
+
+struct SentinelConnectionOption {
+    service_name: Option<String>,
+    redis_options: RedisConnectionOption,
+}
+
+impl TryFrom<SentinelConnectionOption> for SentinelClient {
+    type Error = anyhow::Error;
+
+    fn try_from(value: SentinelConnectionOption) -> Result<Self> {
+        let addresses: Vec<ConnectionAddr> = (&value).try_into()?;
+        let SentinelConnectionOption {
+            service_name,
+            redis_options,
+        } = value;
+        let mut builder = SentinelClientBuilder::new(
+            addresses,
+            service_name.unwrap_or(SENTINEL_MASTER_SERVICE_DEFAULT_NAME.to_string()),
+            Master,
+        )?;
+        if redis_options.common_options.ssl == Some(true) {
+            builder = builder
+                .set_client_to_redis_certificates((&redis_options.common_options).try_into()?);
+        }
+        if let Some(username) = redis_options.common_options.username {
+            builder = builder.set_client_to_redis_username(username);
+        }
+        if let Some(password) = redis_options.common_options.password {
+            builder = builder.set_client_to_redis_password(password);
+        }
+        if let Some(db) = redis_options.common_options.db {
+            builder = builder.set_client_to_redis_db(db);
+        }
+        builder.build().map_err(Into::into)
+    }
+}
+impl TryFrom<&SentinelConnectionOption> for Vec<ConnectionAddr> {
+    type Error = anyhow::Error;
+
+    fn try_from(options: &SentinelConnectionOption) -> Result<Self> {
+        let ssl = options.redis_options.common_options.ssl.unwrap_or(false);
+
+        options
+            .redis_options
+            .hosts
+            .iter()
+            .map(|(host, port)| {
+                if ssl {
+                    Ok(ConnectionAddr::TcpTls {
+                        host: host.clone(),
+                        port: *port,
+                        insecure: false,
+                        tls_params: None,
+                    })
+                } else {
+                    Ok(ConnectionAddr::Tcp(host.clone(), *port))
+                }
+            })
+            .collect()
+    }
+}
+
+impl From<RedisConnectionOption> for SentinelNodeConnectionInfo {
+    fn from(options: RedisConnectionOption) -> Self {
+        let mut redis_connection_info = RedisConnectionInfo::default();
+        let tls_mode: Option<TlsMode> = if options.common_options.ssl == Some(true) {
+            Some(TlsMode::Secure)
+        } else {
+            None
+        };
+        SentinelNodeConnectionInfo {
+            tls_mode,
+            redis_connection_info: Some(redis_connection_info),
+        }
     }
 }
 
@@ -319,9 +419,9 @@ pub async fn new(
     connection_string: String,
     sentinel_master: Option<String>,
 ) -> Result<Arc<dyn OnlineStore>> {
+    let connection_option = parse_redis_connection_string(&connection_string)?;
     match redis_type {
         RedisType::SingleNode => {
-            let connection_option = parse_redis_connection_string(&connection_string)?;
             let client = if connection_option.common_options.ssl == Some(true) {
                 CryptoProvider::install_default(rustls::crypto::ring::default_provider())
                     .map_err(|_| anyhow!("Cannot initialize TLS provider"))?;
@@ -342,7 +442,6 @@ pub async fn new(
             }))
         }
         RedisType::RedisCluster => {
-            let connection_option = parse_redis_connection_string(&connection_string)?;
             let cluster_client = ClusterClient::try_from(connection_option)?;
             let mut connection_pool = cluster_client
                 .get_async_connection()
@@ -354,7 +453,21 @@ pub async fn new(
                 cluster_connection: connection_pool,
             }))
         }
-        RedisType::Sentinel => Err(anyhow!("Sentinel Redis type is not supported yet")),
+        RedisType::Sentinel => {
+            let sentinel_options = SentinelConnectionOption {
+                service_name: sentinel_master,
+                redis_options: connection_option,
+            };
+            let mut sentinel_client = SentinelClient::try_from(sentinel_options)?;
+            let client = sentinel_client.get_client()?;
+            check_redis_connection(&client).await?;
+            let sentinel_connection = sentinel_client.get_async_connection().await?;
+            Ok(Arc::new(RedisSentinelOnlineStore {
+                project,
+                client: sentinel_client,
+                connection_pool: sentinel_connection,
+            }))
+        }
     }
 }
 pub async fn from_config(
@@ -397,6 +510,7 @@ where
 
         let mut pipeline = redis::pipe();
 
+        let project_name = self.get_project();
         for (key, feature_vec) in features.iter() {
             let mut seen_views: HashSet<&str> = HashSet::new();
             let mut feature_keys: Vec<Vec<u8>> = vec![];
@@ -404,7 +518,7 @@ where
                 &key.0,
                 crate::config::EntityKeySerializationVersion::V3,
             )?;
-            hset_entity_key.extend_from_slice(self.get_project().as_bytes());
+            hset_entity_key.extend_from_slice(project_name.as_bytes());
             for feature in feature_vec {
                 if !seen_views.contains(&feature.feature_view_name.as_ref()) {
                     seen_views.insert(feature.feature_view_name.as_ref());
@@ -573,6 +687,18 @@ mod tests {
                 project_dir, project_dir, project_dir
             ),
             None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sentinel_connection_test() -> Result<()> {
+        let online_store = new(
+            "my_project".to_string(),
+            super::RedisType::Sentinel,
+            "127.0.0.1:26379".to_string(),
+            Some("mymaster".to_string()),
         )
         .await?;
         Ok(())
