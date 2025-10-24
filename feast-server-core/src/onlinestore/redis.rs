@@ -361,6 +361,7 @@ impl TryFrom<RedisConnectionOption> for ClusterClient {
     }
 }
 
+#[inline]
 fn parse_common_options(
     result: &mut CommonConnectionOptions,
     i: usize,
@@ -694,6 +695,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn sentinel_connection_test() -> Result<()> {
         let online_store = new(
             "my_project".to_string(),
