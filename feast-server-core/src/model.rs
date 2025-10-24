@@ -172,17 +172,28 @@ pub struct Field {
     pub value_type: ValueTypeEnum,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FeatureProjection {
-    pub feature_view_name: String,
-    pub feature_view_name_alias: Option<String>,
+    pub feature_view_name: Arc<str>,
+    pub feature_view_name_alias: Option<Arc<str>>,
     pub features: Vec<Field>,
     pub join_key_map: HashMap<String, String>,
 }
 
+impl Default for FeatureProjection {
+    fn default() -> Self {
+        Self {
+            feature_view_name: Arc::<str>::from(""),
+            feature_view_name_alias: None,
+            features: Vec::new(),
+            join_key_map: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FeatureView {
-    pub name: String,
+    pub name: Arc<str>,
     pub features: Vec<Field>,
     pub ttl: Duration,
     pub entity_names: Vec<String>,
@@ -193,7 +204,7 @@ pub struct FeatureView {
 impl Default for FeatureView {
     fn default() -> Self {
         Self {
-            name: String::new(),
+            name: Arc::<str>::from(""),
             features: Vec::new(),
             ttl: Duration::zero(),
             entity_names: Vec::new(),
@@ -345,8 +356,8 @@ impl Eq for HashEntityKey {}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Feature {
-    pub feature_view_name: String,
-    pub feature_name: String,
+    pub feature_view_name: Arc<str>,
+    pub feature_name: Arc<str>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -356,17 +367,17 @@ pub enum FeatureType {
 }
 
 impl Feature {
-    pub fn new(feature_view_name: String, feature_name: String) -> Self {
+    pub fn new(feature_view_name: impl Into<Arc<str>>, feature_name: impl Into<Arc<str>>) -> Self {
         Self {
-            feature_view_name,
-            feature_name,
+            feature_view_name: feature_view_name.into(),
+            feature_name: feature_name.into(),
         }
     }
 
-    pub fn entity_feature(feature_name: String) -> Self {
+    pub fn entity_feature(feature_name: impl Into<Arc<str>>) -> Self {
         Self {
-            feature_view_name: "".to_string(),
-            feature_name,
+            feature_view_name: Arc::<str>::from(""),
+            feature_name: feature_name.into(),
         }
     }
 
@@ -404,15 +415,9 @@ impl TryFrom<&str> for Feature {
         }
         if let Some(idx) = s.find(':') {
             let (fv_name, f_name) = s.split_at(idx);
-            Ok(Self {
-                feature_view_name: fv_name.to_string(),
-                feature_name: f_name[1..].to_string(),
-            })
+            Ok(Self::new(fv_name, &f_name[1..]))
         } else {
-            Ok(Self {
-                feature_view_name: "".to_string(),
-                feature_name: s.to_string(),
-            })
+            Ok(Self::entity_feature(s))
         }
     }
 }
@@ -481,8 +486,8 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
             .map(Field::try_from)
             .collect();
         Ok(FeatureProjection {
-            feature_view_name: projection_proto.feature_view_name,
-            feature_view_name_alias: Some(projection_proto.feature_view_name_alias),
+            feature_view_name: projection_proto.feature_view_name.into(),
+            feature_view_name_alias: Some(projection_proto.feature_view_name_alias.into()),
             features: features?,
             join_key_map: projection_proto.join_key_map,
         })
@@ -503,7 +508,7 @@ impl TryFrom<FeatureViewProto> for FeatureView {
             .ok_or(anyhow!("Missing feature view value"))?;
         let features: Result<Vec<Field>> = spec.features.into_iter().map(Field::try_from).collect();
         Ok(FeatureView {
-            name: spec.name,
+            name: spec.name.into(),
             features: features?,
             ttl: spec
                 .ttl
@@ -582,7 +587,7 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
             .into_iter()
             .map(|fv| {
                 let feature_view = FeatureView::try_from(fv)?;
-                Ok((feature_view.name.clone(), feature_view))
+                Ok((feature_view.name.as_ref().to_string(), feature_view))
             })
             .collect();
         let ondemand_feature_views: Result<HashMap<String, OnDemandFeatureView>> = registry_proto

@@ -103,7 +103,7 @@ pub struct SqliteOnlineStore {
 impl OnlineStore for SqliteOnlineStore {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Arc<Feature>>>,
+        features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut view_to_keys: HashMap<String, HashSet<Vec<u8>>> = HashMap::new();
         let mut view_features: HashMap<String, HashSet<String>> = HashMap::new();
@@ -111,11 +111,11 @@ impl OnlineStore for SqliteOnlineStore {
         for (entity_key, feature_list) in features {
             let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
             for feature in feature_list {
-                let fv_name = feature.feature_view_name.clone();
+                let fv_name = feature.feature_view_name.as_ref().to_string();
                 view_features
                     .entry(fv_name.clone())
                     .or_default()
-                    .insert(feature.feature_name.clone());
+                    .insert(feature.feature_name.as_ref().to_string());
 
                 view_to_keys
                     .entry(fv_name)
@@ -237,12 +237,9 @@ mod test {
             }],
         });
 
-        let arg: HashMap<HashEntityKey, Vec<Arc<Feature>>> = HashMap::from([(
+        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from([(
             HashEntityKey(entity_key),
-            vec![Arc::new(Feature::new(
-                "driver_hourly_stats".to_string(),
-                "conv_rate".to_string(),
-            ))],
+            vec![Feature::new("driver_hourly_stats", "conv_rate")],
         )]);
 
         let sqlite_store = SqliteOnlineStore::from_options(

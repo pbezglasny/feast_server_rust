@@ -29,7 +29,7 @@ pub struct OnlineStoreRow {
 pub trait OnlineStore: Send + Sync + 'static {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Arc<Feature>>>,
+        features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>>;
 }
 

@@ -29,21 +29,16 @@ fn bench_onlinestore(c: &mut Criterion) {
         .block_on(online_store())
         .expect("failed to create sqlite online store");
     let entity_keys = build_entity_keys();
-    let feature_names = vec!["conv_rate".to_string(), "acc_rate".to_string()];
+    let feature_names = vec!["conv_rate", "acc_rate"];
 
-    let arg: HashMap<HashEntityKey, Vec<Arc<Feature>>> = entity_keys
+    let arg: HashMap<HashEntityKey, Vec<Feature>> = entity_keys
         .into_iter()
         .map(|key| {
             (
                 HashEntityKey(Arc::new(key)),
                 feature_names
                     .iter()
-                    .map(|feature| {
-                        Arc::new(Feature::new(
-                            "driver_hourly_stats".to_string(),
-                            feature.clone(),
-                        ))
-                    })
+                    .map(|feature| Feature::new("driver_hourly_stats", *feature))
                     .collect(),
             )
         })
