@@ -148,8 +148,9 @@ impl TryFrom<SentinelConnectionOption> for SentinelClient {
             Master,
         )?;
         if redis_options.common_options.ssl == Some(true) {
-            builder = builder
-                .set_client_to_redis_certificates((&redis_options.common_options).try_into()?);
+            let certificates: TlsCertificates = (&redis_options.common_options).try_into()?;
+            builder = builder.set_client_to_redis_certificates(certificates.clone());
+            builder = builder.set_client_to_sentinel_certificates(certificates);
         }
         if let Some(username) = redis_options.common_options.username {
             builder = builder.set_client_to_redis_username(username);
@@ -167,40 +168,12 @@ impl TryFrom<&SentinelConnectionOption> for Vec<ConnectionAddr> {
     type Error = anyhow::Error;
 
     fn try_from(options: &SentinelConnectionOption) -> Result<Self> {
-        let ssl = options.redis_options.common_options.ssl.unwrap_or(false);
-
         options
             .redis_options
             .hosts
             .iter()
-            .map(|(host, port)| {
-                if ssl {
-                    Ok(ConnectionAddr::TcpTls {
-                        host: host.clone(),
-                        port: *port,
-                        insecure: false,
-                        tls_params: None,
-                    })
-                } else {
-                    Ok(ConnectionAddr::Tcp(host.clone(), *port))
-                }
-            })
+            .map(|(host, port)| Ok(ConnectionAddr::Tcp(host.clone(), *port)))
             .collect()
-    }
-}
-
-impl From<RedisConnectionOption> for SentinelNodeConnectionInfo {
-    fn from(options: RedisConnectionOption) -> Self {
-        let mut redis_connection_info = RedisConnectionInfo::default();
-        let tls_mode: Option<TlsMode> = if options.common_options.ssl == Some(true) {
-            Some(TlsMode::Secure)
-        } else {
-            None
-        };
-        SentinelNodeConnectionInfo {
-            tls_mode,
-            redis_connection_info: Some(redis_connection_info),
-        }
     }
 }
 
