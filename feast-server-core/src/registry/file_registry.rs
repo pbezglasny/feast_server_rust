@@ -75,27 +75,27 @@ impl FileFeatureRegistry {
             if self
                 .registry
                 .on_demand_features
-                .contains_key(&projection.feature_view_name)
+                .contains_key(projection.feature_view_name.as_ref())
             {
                 return Err(anyhow!("OnDemand feature view for now is not supported"));
             }
             let mut feature_view = self
                 .registry
                 .feature_views
-                .get(projection.feature_view_name.as_str())
+                .get(projection.feature_view_name.as_ref())
                 .cloned()
                 .ok_or_else(|| {
                     FeastCoreError::feature_view_not_found_for_service(
-                        projection.feature_view_name.clone(),
+                        projection.feature_view_name.as_ref().to_string(),
                         service_name.to_string(),
                     )
                 })?;
             feature_view.join_key_map = Some(projection.join_key_map);
             for feature_name in projection.features {
-                let req_feature = Feature {
-                    feature_view_name: projection.feature_view_name.clone(),
-                    feature_name: feature_name.name.clone(),
-                };
+                let req_feature = Feature::new(
+                    projection.feature_view_name.clone(),
+                    feature_name.name.clone(),
+                );
                 result.insert(req_feature, feature_view.clone());
             }
         }
@@ -106,22 +106,21 @@ impl FileFeatureRegistry {
         names
             .iter()
             .map(|req_feature| -> Result<(Feature, FeatureView)> {
+                let feature_view_name = req_feature.feature_view_name.as_ref();
                 if self
                     .registry
                     .on_demand_features
-                    .contains_key(&req_feature.feature_view_name)
+                    .contains_key(feature_view_name)
                 {
                     return Err(anyhow!("OnDemand feature view for now is not supported"));
                 }
                 let view = self
                     .registry
                     .feature_views
-                    .get(req_feature.feature_view_name.as_str())
+                    .get(feature_view_name)
                     .cloned()
                     .ok_or_else(|| {
-                        FeastCoreError::feature_view_not_found(
-                            req_feature.feature_view_name.clone(),
-                        )
+                        FeastCoreError::feature_view_not_found(feature_view_name.to_string())
                     })?;
                 Ok((req_feature.clone(), view))
             })
@@ -186,10 +185,7 @@ mod tests {
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
         let registry_path = std::path::PathBuf::from(&registry_file);
         let feature_registry = FileFeatureRegistry::from_path(&registry_path)?;
-        let requested_features = vec![Feature {
-            feature_view_name: "driver_hourly_stats_fresh".to_string(),
-            feature_name: "conv_rate".to_string(),
-        }];
+        let requested_features = vec![Feature::new("driver_hourly_stats_fresh", "conv_rate")];
         let found_views = feature_registry.feature_views_from_names(&requested_features)?;
         assert_eq!(found_views.len(), 1);
         Ok(())

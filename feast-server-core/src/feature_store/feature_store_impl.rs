@@ -31,13 +31,8 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: HashMap<Arc<Feature>, FeatureView> = self
-            .registry
-            .request_to_view_keys(&request)
-            .await?
-            .into_iter()
-            .map(|(k, v)| (Arc::new(k), v))
-            .collect();
+        let feature_to_view: HashMap<Feature, FeatureView> =
+            self.registry.request_to_view_keys(&request).await?;
 
         let lookup_mapping = build_lookup_key_mapping(
             &feature_to_view,
@@ -50,13 +45,13 @@ impl FeatureStore {
         // feature view name to feature view
         let view_name_to_view: HashMap<&str, &FeatureView> = feature_to_view
             .values()
-            .map(|view| (view.name.as_str(), view))
+            .map(|view| (view.name.as_ref(), view))
             .collect();
 
         let features_with_keys: Vec<FeatureWithKeys> =
             feature_views_to_keys(&feature_to_view, &request.entities, &lookup_mapping)?;
 
-        let mut features: HashMap<HashEntityKey, Vec<Arc<Feature>>> = HashMap::new();
+        let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
 
         for feature in features_with_keys.iter() {
             for entity_key in feature.entity_keys.iter() {
@@ -87,7 +82,7 @@ impl FeatureStore {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureWithKeys {
-    pub feature: Arc<Feature>,
+    pub feature: Feature,
     pub feature_type: FeatureType,
     pub entity_keys: Arc<Vec<Arc<EntityKey>>>,
 }
@@ -123,7 +118,7 @@ struct LookupKey<'a> {
 }
 
 fn build_lookup_key_mapping<'a>(
-    feature_to_view: &'a HashMap<Arc<Feature>, FeatureView>,
+    feature_to_view: &'a HashMap<Feature, FeatureView>,
     entities_from_request: HashSet<&str>,
 ) -> HashMap<EntityColumnRef<'a>, String> {
     let mut mapping = HashMap::new();
@@ -141,7 +136,7 @@ fn build_lookup_key_mapping<'a>(
             } else {
                 &col.name
             };
-            let key = EntityColumnRef::new(&view.name, &col.name);
+            let key = EntityColumnRef::new(view.name.as_ref(), &col.name);
             mapping.insert(key, lookup_name.clone());
         }
     }
@@ -151,7 +146,7 @@ fn build_lookup_key_mapping<'a>(
 /// Extract entity keys for each feature view from requested entity keys.
 /// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys(
-    feature_to_view: &HashMap<Arc<Feature>, FeatureView>,
+    feature_to_view: &HashMap<Feature, FeatureView>,
     requested_entity_keys: &HashMap<String, Vec<EntityIdValue>>,
     lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
 ) -> Result<Vec<FeatureWithKeys>> {
@@ -169,7 +164,7 @@ fn feature_views_to_keys(
                 .entity_columns
                 .iter()
                 .map(|col| {
-                    let entity_col_ref = EntityColumnRef::new(&view.name, &col.name);
+                    let entity_col_ref = EntityColumnRef::new(view.name.as_ref(), &col.name);
                     lookup_mapping
                         .get(&entity_col_ref)
                         .map(|lookup| LookupKey {
@@ -181,13 +176,16 @@ fn feature_views_to_keys(
                             anyhow!(
                                 "Missing entity column mapping for column {} in feature view {}",
                                 col.name,
-                                view.name
+                                view.name.as_ref()
                             )
                         })
                 })
                 .collect::<Result<Vec<LookupKey>>>()?;
             if lookup_keys.is_empty() {
-                return Err(anyhow!("Feature view {} has no entity columns", view.name));
+                return Err(anyhow!(
+                    "Feature view {} has no entity columns",
+                    view.name.as_ref()
+                ));
             }
             for lookup_key in &lookup_keys {
                 if !requested_entity_keys.contains_key(lookup_key.lookup) {
@@ -296,7 +294,7 @@ mod tests {
 
     fn get_features_views() -> Vec<FeatureView> {
         let feature_view_1 = FeatureView {
-            name: "feature_view1".to_string(),
+            name: Arc::<str>::from("feature_view1"),
             features: vec![],
             ttl: Duration::seconds(1),
             entity_names: vec!["entity_1".to_string()],
@@ -307,7 +305,7 @@ mod tests {
             join_key_map: None,
         };
         let feature_view_2 = FeatureView {
-            name: "feature_view2".to_string(),
+            name: Arc::<str>::from("feature_view2"),
             features: vec![],
             ttl: Duration::seconds(1),
             entity_names: vec!["entity_1".to_string(), "entity_2".to_string()],
@@ -352,17 +350,11 @@ mod tests {
             let features = get_features_views();
             (features[0].clone(), features[1].clone())
         };
-        let feature_1 = Feature {
-            feature_view_name: "feature_view1".to_string(),
-            feature_name: "col1".to_string(),
-        };
-        let feature_2 = Feature {
-            feature_view_name: "feature_view2".to_string(),
-            feature_name: "col2".to_string(),
-        };
+        let feature_1 = Feature::new("feature_view1", "col1");
+        let feature_2 = Feature::new("feature_view2", "col2");
         let features = HashMap::from([
-            (Arc::new(feature_1), feature_view_1),
-            (Arc::new(feature_2), feature_view_2),
+            (feature_1.clone(), feature_view_1),
+            (feature_2.clone(), feature_view_2),
         ]);
         let requested_entity_keys = HashMap::from([
             (
@@ -397,14 +389,8 @@ mod tests {
             )
         });
         assert_eq!(result.len(), 2);
-        let feature_1 = Feature {
-            feature_view_name: "feature_view1".to_string(),
-            feature_name: "col1".to_string(),
-        };
-        let feature_2 = Feature {
-            feature_view_name: "feature_view2".to_string(),
-            feature_name: "col2".to_string(),
-        };
+        let feature_1 = Feature::new("feature_view1", "col1");
+        let feature_2 = Feature::new("feature_view2", "col2");
 
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
         let entity_values_2 = build_entity_keys(
@@ -414,12 +400,12 @@ mod tests {
 
         let mut expected = vec![
             FeatureWithKeys {
-                feature: Arc::new(feature_1),
+                feature: feature_1,
                 feature_type: FeatureType::Plain,
                 entity_keys: Arc::new(entity_values_1),
             },
             FeatureWithKeys {
-                feature: Arc::new(feature_2),
+                feature: feature_2,
                 feature_type: FeatureType::Plain,
                 entity_keys: Arc::new(entity_values_2),
             },
@@ -445,11 +431,8 @@ mod tests {
             "entity_col_1".to_string(),
             "alias_1".to_string(),
         )]));
-        let feature_1 = Feature {
-            feature_view_name: "feature_view1".to_string(),
-            feature_name: "col1".to_string(),
-        };
-        let features = HashMap::from([(Arc::new(feature_1), feature_view_1)]);
+        let feature_1 = Feature::new("feature_view1", "col1");
+        let features = HashMap::from([(feature_1.clone(), feature_view_1)]);
         let requested_entity_keys = HashMap::from([(
             "alias_1".to_string(),
             vec![
@@ -467,15 +450,12 @@ mod tests {
         );
         let result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         assert_eq!(result.len(), 1);
-        let feature_1 = Feature {
-            feature_view_name: "feature_view1".to_string(),
-            feature_name: "col1".to_string(),
-        };
+        let feature_1 = Feature::new("feature_view1", "col1");
 
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
 
         let expected = vec![FeatureWithKeys {
-            feature: Arc::new(feature_1),
+            feature: feature_1,
             feature_type: FeatureType::Plain,
             entity_keys: Arc::new(entity_values_1),
         }];

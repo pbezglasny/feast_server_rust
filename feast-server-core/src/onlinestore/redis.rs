@@ -489,7 +489,7 @@ where
 {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Arc<Feature>>>,
+        features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut entities: Vec<RedisRequest> = vec![];
 
@@ -505,24 +505,21 @@ where
             )?;
             hset_entity_key.extend_from_slice(project_name.as_bytes());
             for feature in feature_vec {
-                if !seen_views.contains(&feature.feature_view_name.as_ref()) {
-                    seen_views.insert(feature.feature_view_name.as_ref());
-                    feature_keys.push(
-                        ["_ts:", feature.feature_view_name.as_ref()]
-                            .concat()
-                            .as_bytes()
-                            .to_vec(),
-                    );
+                let view_name = feature.feature_view_name.as_ref();
+                let feature_name = feature.feature_name.as_ref();
+                if !seen_views.contains(view_name) {
+                    seen_views.insert(view_name);
+                    feature_keys.push(["_ts:", view_name].concat().as_bytes().to_vec());
                     entities.push(RedisRequest::TimestampRow {
                         entity_key: key,
-                        feature_view_name: &feature.feature_view_name,
+                        feature_view_name: view_name,
                     });
                 }
                 feature_keys.push(feature_redis_key(feature)?);
                 entities.push(RedisRequest::FeatureRow {
-                    feature_view_name: &feature.feature_view_name,
+                    feature_view_name: view_name,
                     entity_key: key,
-                    feature_name: &feature.feature_name,
+                    feature_name,
                 });
             }
 
@@ -642,14 +639,8 @@ mod tests {
                 }],
             })),
             vec![
-                Arc::new(Feature::new(
-                    "driver_hourly_stats".to_string(),
-                    "conv_rate".to_string(),
-                )),
-                Arc::new(Feature::new(
-                    "driver_hourly_stats".to_string(),
-                    "acc_rate".to_string(),
-                )),
+                Feature::new("driver_hourly_stats", "conv_rate"),
+                Feature::new("driver_hourly_stats", "acc_rate"),
             ],
         )]);
 

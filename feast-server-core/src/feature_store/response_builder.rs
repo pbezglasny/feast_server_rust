@@ -17,7 +17,7 @@ struct ResponseFeatureRow(Feature, Value, FeatureStatus, DateTime<Utc>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedFeature {
-    pub feature: Arc<Feature>,
+    pub feature: Feature,
     pub feature_type: FeatureType,
 }
 
@@ -235,7 +235,7 @@ impl GetOnlineFeatureResponseBuilder {
             let feature_name = if self.full_feature_names {
                 format!("{}.{}", feature.feature_view_name, feature.feature_name)
             } else {
-                feature.feature_name.clone()
+                feature.feature_name.as_ref().to_string()
             };
             self.features.push(feature_name);
         }
@@ -259,12 +259,12 @@ impl GetOnlineFeatureResponseBuilder {
         self
     }
 
-    fn add_missing_features(mut self, features: HashSet<Arc<Feature>>) -> Self {
+    fn add_missing_features(mut self, features: HashSet<Feature>) -> Self {
         for feature in features {
             let feature_name = if self.full_feature_names {
                 format!("{}__{}", feature.feature_view_name, feature.feature_name)
             } else {
-                feature.feature_name.clone()
+                feature.feature_name.as_ref().to_string()
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
@@ -290,7 +290,7 @@ impl GetOnlineFeatureResponseBuilder {
             let feature_name = if self.full_feature_names {
                 format!("{}__{}", feature_view_name, feature_name)
             } else {
-                feature_name
+                feature_name.as_ref().to_string()
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
@@ -335,7 +335,7 @@ impl GetOnlineFeatureResponse {
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<&str, &FeatureView>,
         lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
-        mut feature_set: HashSet<Arc<Feature>>,
+        mut feature_set: HashSet<Feature>,
         full_feature_names: bool,
     ) -> Result<Self> {
         let mut grouped_rows = group_rows(rows, &feature_views, lookup_mapping)?;
@@ -417,19 +417,16 @@ mod tests {
         };
 
         let mut feature_view = FeatureView::default();
-        feature_view.name = "driver_hourly_stats".to_string();
+        feature_view.name = Arc::<str>::from("driver_hourly_stats");
         feature_view.ttl = Duration::seconds(3600);
         feature_view.entity_names = vec!["driver_id".to_string()];
 
         let mut feature_views = HashMap::new();
-        feature_views.insert(feature_view.name.as_str(), &feature_view);
+        feature_views.insert(feature_view.name.as_ref(), &feature_view);
 
-        let features: HashSet<Arc<Feature>> = vec![Arc::new(Feature::new(
-            "driver_hourly_stats".to_string(),
-            "acc_rate".to_string(),
-        ))]
-        .into_iter()
-        .collect();
+        let features: HashSet<Feature> = vec![Feature::new("driver_hourly_stats", "acc_rate")]
+            .into_iter()
+            .collect();
 
         let lookup_mapping: HashMap<EntityColumnRef, String> = vec![(
             EntityColumnRef::new("driver_hourly_stats", "driver_id"),
