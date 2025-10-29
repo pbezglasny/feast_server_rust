@@ -1019,9 +1019,13 @@ dependencies = [
  "criterion",
  "feast-server-core",
  "grpc-server",
+ "prost 0.13.5",
+ "prost-types 0.13.5",
  "reqwest",
  "rest-server",
  "tokio",
+ "tonic",
+ "tonic-build",
  "tracing",
  "tracing-subscriber",
 ]
