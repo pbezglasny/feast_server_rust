@@ -152,7 +152,7 @@ impl SqlFeatureRegistry {
             .into_iter()
             .map(|(name, proto)| {
                 let fs = FeatureService::try_from(proto)
-                    .expect("Failed to convert FeatureService proto");
+                    .map_err(|e| anyhow!("Failed to convert FeatureService proto for '{}': {}", name, e))?;
                 (name, fs)
             })
             .collect();
