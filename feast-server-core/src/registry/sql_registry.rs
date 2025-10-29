@@ -107,6 +107,12 @@ pub(crate) struct SqlFeatureRegistry {
 }
 
 impl SqlFeatureRegistry {
+    /// Queries all registry entities, feature views, on-demand feature views, and feature services
+    /// from the database for the current project, and constructs a `FileFeatureRegistry` from the results.
+    ///
+    /// # Errors
+    /// Returns an error if the database connection fails, if any query fails, or if deserialization
+    /// of protocol buffer data into model structs fails.
     pub async fn query_registry(&self) -> Result<FileFeatureRegistry> {
         let mut connection = self.connection_pool.acquire().await?;
         let entities_vec: Vec<(String, Vec<u8>)> =
