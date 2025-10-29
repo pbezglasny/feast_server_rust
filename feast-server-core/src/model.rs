@@ -146,15 +146,6 @@ pub struct Entity {
     pub value_type: ValueTypeEnum,
 }
 
-impl TryFrom<Vec<u8>> for Entity {
-    type Error = Error;
-
-    fn try_from(value: Vec<u8>) -> Result<Self> {
-        let entity_proto = EntityProto::decode(value.as_slice())?;
-        Entity::try_from(entity_proto)
-    }
-}
-
 impl Serialize for ValueTypeEnum {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -229,15 +220,6 @@ pub struct OnDemandFeatureView {
     pub project: String,
 }
 
-impl TryFrom<Vec<u8>> for OnDemandFeatureView {
-    type Error = Error;
-
-    fn try_from(value: Vec<u8>) -> Result<Self> {
-        let odfv_proto = OnDemandFeatureViewProto::decode(value.as_slice())?;
-        OnDemandFeatureView::try_from(odfv_proto)
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct LoggingConfig {
     pub sample_rate: f32,
@@ -251,15 +233,6 @@ pub struct FeatureService {
     pub last_updated_timestamp: Option<DateTime<Utc>>,
     pub projections: Vec<FeatureProjection>,
     pub logging_config: Option<LoggingConfig>,
-}
-
-impl TryFrom<Vec<u8>> for FeatureService {
-    type Error = Error;
-
-    fn try_from(value: Vec<u8>) -> Result<Self> {
-        let feature_service_proto = FeatureServiceProto::decode(value.as_slice())?;
-        FeatureService::try_from(feature_service_proto)
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -553,15 +526,6 @@ impl TryFrom<FeatureViewProto> for FeatureView {
     }
 }
 
-impl TryFrom<Vec<u8>> for FeatureView {
-    type Error = Error;
-
-    fn try_from(value: Vec<u8>) -> Result<Self> {
-        let feature_view_proto = FeatureViewProto::decode(value.as_slice())?;
-        FeatureView::try_from(feature_view_proto)
-    }
-}
-
 impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
     type Error = Error;
     fn try_from(odfv_proto: OnDemandFeatureViewProto) -> Result<Self> {
@@ -647,3 +611,21 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
         })
     }
 }
+
+macro_rules! try_from_vec_u8 {
+    ($target_type:ty, $proto_type:ty) => {
+        impl TryFrom<Vec<u8>> for $target_type {
+            type Error = Error;
+
+            fn try_from(value: Vec<u8>) -> Result<Self> {
+                let proto = <$proto_type>::decode(value.as_slice())?;
+                <$target_type>::try_from(proto)
+            }
+        }
+    };
+}
+
+try_from_vec_u8!(Entity, EntityProto);
+try_from_vec_u8!(FeatureService, FeatureServiceProto);
+try_from_vec_u8!(OnDemandFeatureView, OnDemandFeatureViewProto);
+try_from_vec_u8!(FeatureView, FeatureViewProto);
