@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cargo:rerun-if-changed=../feast-server-core/protos/feast/serving/ServingService.proto"
     );
     println!("cargo:rerun-if-changed=../feast-server-core/protos/feast/types/Value.proto");
+    println!("cargo:rerun-if-changed=../feast-server-core/protos");
 
     Ok(())
 }
