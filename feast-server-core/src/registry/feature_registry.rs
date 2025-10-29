@@ -61,7 +61,7 @@ pub async fn get_registry(
         },
         RegistryType::Sql => {
             info!("Using SQL feature registry");
-            let registry = CachedFileRegistry::new_sql(conf.clone(), project.to_string()).await?;
+            let registry = CachedFileRegistry::new_sql(conf.clone(), project).await?;
             Ok(registry)
         }
     }
