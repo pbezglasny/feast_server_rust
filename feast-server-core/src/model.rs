@@ -271,9 +271,9 @@ pub struct FeatureRegistry {
 }
 
 #[derive(Debug, Clone)]
-pub enum RequestedFeatures {
-    FeatureNames(Vec<String>),
-    FeatureService(String),
+pub enum RequestedFeatures<'a> {
+    FeatureNames(&'a [String]),
+    FeatureService(&'a str),
 }
 
 /// Implement custom hashing for EntityKey to support using it as a key in HashMap,
@@ -449,17 +449,14 @@ impl TryFrom<&str> for Feature {
     }
 }
 
-impl From<&GetOnlineFeaturesRequest> for RequestedFeatures {
-    fn from(get_online_feature_request: &GetOnlineFeaturesRequest) -> Self {
+impl<'a> From<&'a GetOnlineFeaturesRequest> for RequestedFeatures<'a> {
+    fn from(get_online_feature_request: &'a GetOnlineFeaturesRequest) -> Self {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
-            RequestedFeatures::FeatureService(feature_service.clone())
+            RequestedFeatures::FeatureService(&feature_service)
+        } else if let Some(features) = &get_online_feature_request.features {
+            RequestedFeatures::FeatureNames(features)
         } else {
-            RequestedFeatures::FeatureNames(
-                get_online_feature_request
-                    .features
-                    .clone()
-                    .unwrap_or_default(),
-            )
+            RequestedFeatures::FeatureNames(&[])
         }
     }
 }
