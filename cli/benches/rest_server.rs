@@ -15,8 +15,6 @@ use tokio::runtime::Runtime;
 
 fn workspace_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("cli crate has no parent directory")
         .join(relative)
 }
 
