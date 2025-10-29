@@ -24,8 +24,9 @@ aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.106.0" }
 google-cloud-storage = { version = "0.22.1", default-features = false, features = ["auth", "rustls-tls"] }
 url = "2.5.7"
+moka = { version = "0.12.11", features = ["default", "future"] }
 # Online store dependencies
-sqlx = { version = "=0.8.6", features = ["sqlite", "chrono", "runtime-tokio"] }
+sqlx = { version = "=0.8.6", features = ["sqlite", "postgres", "chrono", "runtime-tokio"] }
 redis = { version = "0.32.6", features = ["default", "tokio-comp", "safe_iterators", "connection-manager", "cluster-async", "tls-rustls", "tokio-rustls-comp", "sentinel"] }
 murmur3 = { version = "0.5.2" }
 

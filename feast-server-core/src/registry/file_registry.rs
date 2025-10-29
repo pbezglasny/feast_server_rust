@@ -14,11 +14,15 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
 pub struct FileFeatureRegistry {
     registry: FeatureRegistry,
 }
 
 impl FileFeatureRegistry {
+    pub fn from_registry(registry: FeatureRegistry) -> Self {
+        Self { registry }
+    }
     pub fn from_proto(proto_registry: Registry) -> Result<Self> {
         let registry = FeatureRegistry::try_from(proto_registry)?;
         Ok(Self { registry })
@@ -127,8 +131,6 @@ impl FileFeatureRegistry {
             .collect()
     }
 
-    #[allow(dead_code)]
-    #[allow(unused_variables)]
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,

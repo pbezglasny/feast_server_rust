@@ -9,6 +9,7 @@ use std::sync::Arc;
 mod cached_registry;
 mod feature_registry;
 pub mod file_registry;
+mod sql_registry;
 
 pub use feature_registry::get_registry;
 pub use file_registry::FileFeatureRegistry;

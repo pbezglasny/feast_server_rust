@@ -75,8 +75,9 @@ async fn main() -> Result<()> {
             tracing::info!("Start serving on {}:{} using {}", host, port, r#type);
             let tls_enabled = key.is_some() && cert.is_some();
             let registry = feast_server_core::registry::get_registry(
-                &repo_config.registry,
+                repo_config.registry.clone(),
                 repo_config.provider.clone(),
+                repo_config.project.clone(),
                 Some(cwd_str),
             )
             .await?;

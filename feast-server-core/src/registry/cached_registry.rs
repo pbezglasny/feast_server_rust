@@ -1,3 +1,4 @@
+use crate::config::RegistryConfig;
 use crate::model::{Feature, FeatureView, GetOnlineFeaturesRequest};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
@@ -117,6 +118,23 @@ impl CachedFileRegistry {
         };
 
         Self::create_registry(producer_fn, cache_ttl_seconds).await
+    }
+
+    pub async fn new_sql(
+        config: RegistryConfig,
+        project: String,
+    ) -> Result<Arc<dyn FeatureRegistryService>> {
+        let ttl = config.cache_ttl_seconds;
+        let producer_fn = move || {
+            let config = config.clone();
+            let project = project.clone();
+            async move {
+                let sql_registry = crate::registry::sql_registry::new(config, project).await?;
+                let registry = sql_registry.query_registry().await?;
+                Ok(registry)
+            }
+        };
+        Self::create_registry(producer_fn, ttl).await
     }
 }
 
