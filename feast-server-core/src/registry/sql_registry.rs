@@ -205,7 +205,7 @@ mod tests {
     #[ignore]
     async fn test_feature_service() -> Result<()> {
         let config = RegistryConfig {
-            path: "postgresql://postgres:mysecretpassword@127.0.0.1:5432/postgres".to_string(),
+            path: "postgresql://127.0.0.1:5432/postgres".to_string(),
             cache_ttl_seconds: Some(60),
             ..Default::default()
         };
