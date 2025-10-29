@@ -1,5 +1,7 @@
 use crate::config::RegistryConfig;
-use crate::model::{FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest};
+use crate::model::{
+    Entity, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest,
+};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
 use redis::AsyncTypedCommands;
@@ -120,14 +122,14 @@ impl SqlFeatureRegistry {
                 .bind(&self.project)
                 .fetch_all(&mut *connection)
                 .await?;
-        let entities: HashMap<String, crate::model::Entity> = entities_vec
+        let entities: HashMap<String, Entity> = entities_vec
             .into_iter()
             .map(|(name, proto)| {
-                let entity =
-                    crate::model::Entity::try_from(proto).map_err(|e| anyhow!("Failed to convert Entity proto for '{}': {}", name, e))?;
-                (name, entity)
+                Entity::try_from(proto)
+                    .map_err(|e| anyhow!("Failed to convert Entity proto for '{}': {}", name, e))
+                    .map(|entity| (name, entity))
             })
-            .collect();
+            .collect::<Result<HashMap<_, _>>>()?;
         let feature_views_vec: Vec<(String, Vec<u8>)> = sqlx::query_as(
             "SELECT feature_view_name, feature_view_proto FROM feature_views WHERE project_id=$1",
         )
@@ -137,17 +139,13 @@ impl SqlFeatureRegistry {
         let feature_views: HashMap<String, FeatureView> = feature_views_vec
             .into_iter()
             .map(|(name, proto)| {
-                let fv = FeatureView::try_from(proto)
-                    .map_err(|e| anyhow!("Failed to convert FeatureView proto for '{}': {}", name, e))?;
-                (name, fv)
+                FeatureView::try_from(proto)
+                    .map_err(|e| {
+                        anyhow!("Failed to convert FeatureView proto for '{}': {}", name, e)
+                    })
+                    .map(|fv| (name, fv))
             })
-            .collect();
-        let feature_services_vec: Vec<(String, Vec<u8>)> = sqlx::query_as(
-            "SELECT feature_service_name, feature_service_proto FROM feature_services WHERE project_id=$1",
-        )
-            .bind(&self.project)
-            .fetch_all(&mut *connection)
-            .await?;
+            .collect::<Result<HashMap<_, _>>>()?;
         let on_demand_features_vec: Vec<(String, Vec<u8>)> = sqlx::query_as(
             "SELECT feature_view_name, feature_view_proto FROM on_demand_feature_views WHERE project_id=$1",
         )
@@ -159,22 +157,40 @@ impl SqlFeatureRegistry {
                 .into_iter()
                 .map(|(name, proto)| {
                     crate::model::OnDemandFeatureView::try_from(proto)
-                        .map_err(|e| anyhow!("Failed to convert OnDemandFeatureView proto for '{}': {}", name, e))
+                        .map_err(|e| {
+                            anyhow!(
+                                "Failed to convert OnDemandFeatureView proto for '{}': {}",
+                                name,
+                                e
+                            )
+                        })
                         .map(|odf| (name, odf))
                 })
                 .collect::<Result<HashMap<_, _>>>()?;
+        let feature_services_vec: Vec<(String, Vec<u8>)> = sqlx::query_as(
+            "SELECT feature_service_name, feature_service_proto FROM feature_services WHERE project_id=$1",
+        )
+            .bind(&self.project)
+            .fetch_all(&mut *connection)
+            .await?;
         let feature_services: HashMap<String, FeatureService> = feature_services_vec
             .into_iter()
             .map(|(name, proto)| {
-                let fs = FeatureService::try_from(proto)
-                    .map_err(|e| anyhow!("Failed to convert FeatureService proto for '{}': {}", name, e))?;
-                (name, fs)
+                FeatureService::try_from(proto)
+                    .map_err(|e| {
+                        anyhow!(
+                            "Failed to convert FeatureService proto for '{}': {}",
+                            name,
+                            e
+                        )
+                    })
+                    .map(|fs| (name, fs))
             })
-            .collect();
+            .collect::<Result<HashMap<_, _>>>()?;
         Ok(FileFeatureRegistry::from_registry(FeatureRegistry {
             entities,
             feature_views,
-            on_demand_features: on_demand_feature_views,
+            on_demand_feature_views,
             feature_services,
         }))
     }

@@ -78,7 +78,7 @@ impl FileFeatureRegistry {
         for projection in projections {
             if self
                 .registry
-                .on_demand_features
+                .on_demand_feature_views
                 .contains_key(projection.feature_view_name.as_ref())
             {
                 return Err(anyhow!("OnDemand feature view for now is not supported"));
@@ -113,7 +113,7 @@ impl FileFeatureRegistry {
                 let feature_view_name = req_feature.feature_view_name.as_ref();
                 if self
                     .registry
-                    .on_demand_features
+                    .on_demand_feature_views
                     .contains_key(feature_view_name)
                 {
                     return Err(anyhow!("OnDemand feature view for now is not supported"));

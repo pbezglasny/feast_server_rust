@@ -266,7 +266,7 @@ impl TryFrom<Vec<u8>> for FeatureService {
 pub struct FeatureRegistry {
     pub entities: HashMap<String, Entity>,
     pub feature_views: HashMap<String, FeatureView>,
-    pub on_demand_features: HashMap<String, OnDemandFeatureView>,
+    pub on_demand_feature_views: HashMap<String, OnDemandFeatureView>,
     pub feature_services: HashMap<String, FeatureService>,
 }
 
@@ -642,7 +642,7 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
         Ok(FeatureRegistry {
             entities: entities?,
             feature_views: feature_views?,
-            on_demand_features: ondemand_feature_views?,
+            on_demand_feature_views: ondemand_feature_views?,
             feature_services: feature_services?,
         })
     }
