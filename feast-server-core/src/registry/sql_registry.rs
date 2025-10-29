@@ -143,11 +143,11 @@ impl SqlFeatureRegistry {
             on_demand_features_vec
                 .into_iter()
                 .map(|(name, proto)| {
-                    let odf = crate::model::OnDemandFeatureView::try_from(proto)
-                        .expect("Failed to convert OnDemandFeatureView proto");
-                    (name, odf)
+                    crate::model::OnDemandFeatureView::try_from(proto)
+                        .map_err(|e| anyhow!("Failed to convert OnDemandFeatureView proto for '{}': {}", name, e))
+                        .map(|odf| (name, odf))
                 })
-                .collect();
+                .collect::<Result<HashMap<_, _>>>()?;
         let feature_services: HashMap<String, FeatureService> = feature_services_vec
             .into_iter()
             .map(|(name, proto)| {
