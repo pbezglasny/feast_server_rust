@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use feast_server_core::feature_store::FeatureStore;
-use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use feast_server_core::onlinestore::OnlineStore;
-use feast_server_core::registry::file_registry::FileFeatureRegistry;
+use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
 use feast_server_core::registry::FeatureRegistryService;
-use grpc_server::server::{start_server as grpc_start_server, ServerConfig};
+use feast_server_core::registry::file_registry::FileFeatureRegistry;
+use grpc_server::server::{ServerConfig, start_server as grpc_start_server};
 use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 
@@ -163,7 +163,12 @@ fn bench_grpc_server(c: &mut Criterion) {
     });
 
     server_task.abort();
-    runtime.block_on(async { server_task.await }).expect("server shutdown failed");
+    match runtime.block_on(async { server_task.await }) {
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("gRPC server task failed: {:?}", err);
+        }
+    }
 }
 
 criterion_group!(grpc_server_bench, bench_grpc_server);
