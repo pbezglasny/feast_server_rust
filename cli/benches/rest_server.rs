@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use axum_server::Handle;
+use bytes::Bytes;
 use criterion::{Criterion, criterion_group, criterion_main};
 use feast_server_core::feature_store::FeatureStore;
 use feast_server_core::onlinestore::OnlineStore;
@@ -98,6 +99,7 @@ fn bench_rest_server(c: &mut Criterion) {
     let request_path = workspace_path("body.json");
     let request_body =
         std::fs::read_to_string(&request_path).expect("failed to read request payload");
+    let request_body = Bytes::from(request_body);
     let request_url = format!("http://127.0.0.1:{port}/get-online-features");
 
     c.bench_function("rest_server_get_online_features", |b| {
