@@ -4,22 +4,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use feast_server_core::feature_store::FeatureStore;
-use feast_server_core::onlinestore::OnlineStore;
 use feast_server_core::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
-use feast_server_core::registry::FeatureRegistryService;
+use feast_server_core::onlinestore::OnlineStore;
 use feast_server_core::registry::file_registry::FileFeatureRegistry;
-use grpc_server::server::{ServerConfig, start_server as grpc_start_server};
+use feast_server_core::registry::FeatureRegistryService;
+use grpc_server::server::{start_server as grpc_start_server, ServerConfig};
 use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 
 mod proto {
     pub mod feast {
         pub mod serving {
+            #![allow(dead_code)]
             tonic::include_proto!("feast.serving");
         }
         pub mod types {
+            #![allow(dead_code)]
             tonic::include_proto!("feast.types");
         }
     }
