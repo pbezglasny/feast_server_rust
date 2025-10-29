@@ -16,6 +16,8 @@ use tokio::runtime::Runtime;
 
 fn workspace_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("cli crate has no parent directory")
         .join(relative)
 }
 
@@ -96,7 +98,7 @@ fn bench_rest_server(c: &mut Criterion) {
     let health_url = format!("http://127.0.0.1:{port}/health");
     runtime.block_on(wait_for_server(&client, &health_url));
 
-    let request_path = workspace_path("body.json");
+    let request_path = workspace_path("cli/benches/body.json");
     let request_body =
         std::fs::read_to_string(&request_path).expect("failed to read request payload");
     let request_body = Bytes::from(request_body);
