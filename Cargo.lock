@@ -1014,9 +1014,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum-server",
+ "bytes",
  "clap",
+ "criterion",
  "feast-server-core",
  "grpc-server",
+ "reqwest",
  "rest-server",
  "tokio",
  "tracing",
