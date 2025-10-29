@@ -70,6 +70,15 @@ fn read_credentials(mut options: PgConnectOptions) -> Result<PgConnectOptions> {
     }
     Ok(options)
 }
+/// Establishes a new PostgreSQL connection pool.
+///
+/// # Parameters
+/// - `path`: PostgreSQL connection string, e.g. `"postgres://user:password@host:port/database"`.
+///   The username and password in the connection string can be overridden by the
+///   `FEAST_SQL_REGISTRY_USERNAME` and `FEAST_SQL_REGISTRY_PASSWORD` environment variables.
+///
+/// # Returns
+/// A connection pool to the PostgreSQL database.
 async fn new_postgres_connection(path: &str) -> Result<Pool<Postgres>> {
     let mut options = PgConnectOptions::from_str(path)?;
     options = read_credentials(options)?;
