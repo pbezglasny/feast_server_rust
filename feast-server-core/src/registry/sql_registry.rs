@@ -122,7 +122,8 @@ impl SqlFeatureRegistry {
         let feature_views: HashMap<String, FeatureView> = feature_views_vec
             .into_iter()
             .map(|(name, proto)| {
-                let fv = FeatureView::try_from(proto).expect("Failed to convert FeatureView proto");
+                let fv = FeatureView::try_from(proto)
+                    .map_err(|e| anyhow!("Failed to convert FeatureView proto for '{}': {}", name, e))?;
                 (name, fv)
             })
             .collect();
