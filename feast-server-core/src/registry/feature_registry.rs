@@ -19,8 +19,9 @@ fn get_provider(provider_opt: Option<Provider>, path: &str) -> Provider {
 }
 
 pub async fn get_registry(
-    conf: &RegistryConfig,
+    conf: RegistryConfig,
     provider: Option<Provider>,
+    project: String,
     cwd: Option<&str>,
 ) -> Result<Arc<dyn FeatureRegistryService>> {
     let path_prefix = cwd.unwrap_or("");
@@ -58,6 +59,10 @@ pub async fn get_registry(
             }
             _ => Err(anyhow!("Unsupported provider for file registry")),
         },
-        _ => Err(anyhow::anyhow!("Only file registry is supported now")),
+        RegistryType::Sql => {
+            info!("Using SQL feature registry");
+            let registry = CachedFileRegistry::new_sql(conf.clone(), project).await?;
+            Ok(registry)
+        }
     }
 }

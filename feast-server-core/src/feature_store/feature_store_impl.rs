@@ -1,8 +1,9 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
+use crate::model;
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
-    GetOnlineFeatureResponse, GetOnlineFeaturesRequest, HashEntityKey,
+    GetOnlineFeatureResponse, GetOnlineFeaturesRequest, HashEntityKey, RequestedFeatures,
 };
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
@@ -31,8 +32,11 @@ impl FeatureStore {
         &self,
         request: GetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeatureResponse> {
-        let feature_to_view: HashMap<Feature, FeatureView> =
-            self.registry.request_to_view_keys(&request).await?;
+        let requested_features: RequestedFeatures = RequestedFeatures::from(&request);
+        let feature_to_view: HashMap<Feature, FeatureView> = self
+            .registry
+            .request_to_view_keys(requested_features)
+            .await?;
 
         let lookup_mapping = build_lookup_key_mapping(
             &feature_to_view,

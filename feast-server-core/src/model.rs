@@ -239,14 +239,14 @@ pub struct FeatureService {
 pub struct FeatureRegistry {
     pub entities: HashMap<String, Entity>,
     pub feature_views: HashMap<String, FeatureView>,
-    pub on_demand_features: HashMap<String, OnDemandFeatureView>,
+    pub on_demand_feature_views: HashMap<String, OnDemandFeatureView>,
     pub feature_services: HashMap<String, FeatureService>,
 }
 
 #[derive(Debug, Clone)]
-pub enum RequestedFeatures {
-    FeatureNames(Vec<String>),
-    FeatureService(String),
+pub enum RequestedFeatures<'a> {
+    FeatureNames(&'a [String]),
+    FeatureService(&'a str),
 }
 
 /// Implement custom hashing for EntityKey to support using it as a key in HashMap,
@@ -422,17 +422,14 @@ impl TryFrom<&str> for Feature {
     }
 }
 
-impl From<&GetOnlineFeaturesRequest> for RequestedFeatures {
-    fn from(get_online_feature_request: &GetOnlineFeaturesRequest) -> Self {
+impl<'a> From<&'a GetOnlineFeaturesRequest> for RequestedFeatures<'a> {
+    fn from(get_online_feature_request: &'a GetOnlineFeaturesRequest) -> Self {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
-            RequestedFeatures::FeatureService(feature_service.clone())
+            RequestedFeatures::FeatureService(&feature_service)
+        } else if let Some(features) = &get_online_feature_request.features {
+            RequestedFeatures::FeatureNames(features)
         } else {
-            RequestedFeatures::FeatureNames(
-                get_online_feature_request
-                    .features
-                    .clone()
-                    .unwrap_or_default(),
-            )
+            RequestedFeatures::FeatureNames(&[])
         }
     }
 }
@@ -609,8 +606,26 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
         Ok(FeatureRegistry {
             entities: entities?,
             feature_views: feature_views?,
-            on_demand_features: ondemand_feature_views?,
+            on_demand_feature_views: ondemand_feature_views?,
             feature_services: feature_services?,
         })
     }
 }
+
+macro_rules! try_from_vec_u8 {
+    ($target_type:ty, $proto_type:ty) => {
+        impl TryFrom<Vec<u8>> for $target_type {
+            type Error = Error;
+
+            fn try_from(value: Vec<u8>) -> Result<Self> {
+                let proto = <$proto_type>::decode(value.as_slice())?;
+                <$target_type>::try_from(proto)
+            }
+        }
+    };
+}
+
+try_from_vec_u8!(Entity, EntityProto);
+try_from_vec_u8!(FeatureService, FeatureServiceProto);
+try_from_vec_u8!(OnDemandFeatureView, OnDemandFeatureViewProto);
+try_from_vec_u8!(FeatureView, FeatureViewProto);

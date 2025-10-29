@@ -14,11 +14,15 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
 pub struct FileFeatureRegistry {
     registry: FeatureRegistry,
 }
 
 impl FileFeatureRegistry {
+    pub fn from_registry(registry: FeatureRegistry) -> Self {
+        Self { registry }
+    }
     pub fn from_proto(proto_registry: Registry) -> Result<Self> {
         let registry = FeatureRegistry::try_from(proto_registry)?;
         Ok(Self { registry })
@@ -74,7 +78,7 @@ impl FileFeatureRegistry {
         for projection in projections {
             if self
                 .registry
-                .on_demand_features
+                .on_demand_feature_views
                 .contains_key(projection.feature_view_name.as_ref())
             {
                 return Err(anyhow!("OnDemand feature view for now is not supported"));
@@ -109,7 +113,7 @@ impl FileFeatureRegistry {
                 let feature_view_name = req_feature.feature_view_name.as_ref();
                 if self
                     .registry
-                    .on_demand_features
+                    .on_demand_feature_views
                     .contains_key(feature_view_name)
                 {
                     return Err(anyhow!("OnDemand feature view for now is not supported"));
@@ -127,8 +131,6 @@ impl FileFeatureRegistry {
             .collect()
     }
 
-    #[allow(dead_code)]
-    #[allow(unused_variables)]
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
@@ -163,18 +165,17 @@ impl FileFeatureRegistry {
 
 #[async_trait]
 impl FeatureRegistryService for FileFeatureRegistry {
-    async fn request_to_view_keys(
-        &self,
-        request: &GetOnlineFeaturesRequest,
+    async fn request_to_view_keys<'a>(
+        &'a self,
+        request: RequestedFeatures<'a>,
     ) -> Result<HashMap<Feature, FeatureView>> {
-        let requested_features = RequestedFeatures::from(request);
-        self.get_feature_views(requested_features)
+        self.get_feature_views(request)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Feature, GetOnlineFeaturesRequest};
+    use crate::model::{Feature, GetOnlineFeaturesRequest, RequestedFeatures};
     use crate::registry::FeatureRegistryService;
     use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
@@ -201,8 +202,9 @@ mod tests {
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
+        let requested_features = RequestedFeatures::from(&request_obj);
         let result = feature_registry_service
-            .request_to_view_keys(&request_obj)
+            .request_to_view_keys(requested_features)
             .await?;
         println!("{:?}", result);
         Ok(())
@@ -217,8 +219,9 @@ mod tests {
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.feature_service = Some("driver_activity_v4".to_string());
+        let requested_features = RequestedFeatures::from(&request_obj);
         let result = feature_registry_service
-            .request_to_view_keys(&request_obj)
+            .request_to_view_keys(requested_features)
             .await?;
         println!("{:?}", result);
         Ok(())
