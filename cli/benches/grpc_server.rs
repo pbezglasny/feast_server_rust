@@ -163,7 +163,7 @@ fn bench_grpc_server(c: &mut Criterion) {
     });
 
     server_task.abort();
-    let _ = runtime.block_on(async { server_task.await });
+    runtime.block_on(async { server_task.await }).expect("server shutdown failed");
 }
 
 criterion_group!(grpc_server_bench, bench_grpc_server);
