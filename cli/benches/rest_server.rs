@@ -125,9 +125,6 @@ fn bench_rest_server(c: &mut Criterion) {
     });
 
     shutdown_handle.shutdown();
-    runtime.block_on(async {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    });
     runtime
         .block_on(async { server_task.await })
         .expect("server task panicked")
