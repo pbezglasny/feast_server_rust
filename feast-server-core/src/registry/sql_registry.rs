@@ -1,19 +1,13 @@
 use crate::config::RegistryConfig;
-use crate::model::{
-    Feature, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest,
-};
+use crate::model::{FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
-use moka::future::{Cache, CacheBuilder};
 use redis::AsyncTypedCommands;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use sqlx::{Acquire, Database, Executor, Pool, Postgres, query};
-use std::collections::{HashMap, HashSet};
-use std::marker::PhantomData;
+use sqlx::{Acquire, Database, Executor, Pool, Postgres};
+use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 
 const FEAST_SQL_REGISTRY_MAX_CONNECTIONS_ENV_VAR: &str = "FEAST_SQL_REGISTRY_MAX_CONNECTIONS";
 const DEFAULT_MAX_CONNECTIONS: u32 = 5;
@@ -176,6 +170,7 @@ mod tests {
     use anyhow::Result;
 
     #[tokio::test]
+    #[ignore]
     async fn test_feature_service() -> Result<()> {
         let config = RegistryConfig {
             path: "postgresql://postgres:mysecretpassword@127.0.0.1:5432/postgres".to_string(),

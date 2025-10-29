@@ -165,18 +165,17 @@ impl FileFeatureRegistry {
 
 #[async_trait]
 impl FeatureRegistryService for FileFeatureRegistry {
-    async fn request_to_view_keys(
-        &self,
-        request: &GetOnlineFeaturesRequest,
+    async fn request_to_view_keys<'a>(
+        &'a self,
+        request: RequestedFeatures<'a>,
     ) -> Result<HashMap<Feature, FeatureView>> {
-        let requested_features = RequestedFeatures::from(request);
-        self.get_feature_views(requested_features)
+        self.get_feature_views(request)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Feature, GetOnlineFeaturesRequest};
+    use crate::model::{Feature, GetOnlineFeaturesRequest, RequestedFeatures};
     use crate::registry::FeatureRegistryService;
     use crate::registry::file_registry::FileFeatureRegistry;
     use anyhow::Result;
@@ -203,8 +202,9 @@ mod tests {
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
+        let requested_features = RequestedFeatures::from(&request_obj);
         let result = feature_registry_service
-            .request_to_view_keys(&request_obj)
+            .request_to_view_keys(requested_features)
             .await?;
         println!("{:?}", result);
         Ok(())
@@ -219,8 +219,9 @@ mod tests {
             Box::new(feature_registry_proto);
         let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.feature_service = Some("driver_activity_v4".to_string());
+        let requested_features = RequestedFeatures::from(&request_obj);
         let result = feature_registry_service
-            .request_to_view_keys(&request_obj)
+            .request_to_view_keys(requested_features)
             .await?;
         println!("{:?}", result);
         Ok(())

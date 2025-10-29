@@ -1,5 +1,5 @@
 use crate::config::RegistryConfig;
-use crate::model::{Feature, FeatureView, GetOnlineFeaturesRequest};
+use crate::model::{Feature, FeatureView, GetOnlineFeaturesRequest, RequestedFeatures};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::Result;
 use arc_swap::ArcSwap;
@@ -224,9 +224,9 @@ fn start_refresh_task<F, Fut>(
 
 #[async_trait]
 impl FeatureRegistryService for CachedFileRegistry {
-    async fn request_to_view_keys(
-        &self,
-        request: &GetOnlineFeaturesRequest,
+    async fn request_to_view_keys<'a>(
+        &'a self,
+        request: RequestedFeatures<'a>,
     ) -> Result<HashMap<Feature, FeatureView>> {
         if self
             .created_at
@@ -243,7 +243,7 @@ impl FeatureRegistryService for CachedFileRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::GetOnlineFeaturesRequest;
+    use crate::model::{GetOnlineFeaturesRequest, RequestedFeatures};
 
     #[tokio::test]
     #[ignore]
@@ -252,7 +252,8 @@ mod tests {
         let s3_registry = super::CachedFileRegistry::new_s3(bucket_url, None).await?;
         let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
-        let result = s3_registry.request_to_view_keys(&request_obj).await?;
+        let requested_features = RequestedFeatures::from(&request_obj);
+        let result = s3_registry.request_to_view_keys(requested_features).await?;
         println!("{:#?}", result);
         Ok(())
     }
@@ -264,7 +265,10 @@ mod tests {
         let gcs_registry = super::CachedFileRegistry::new_gcs(bucket_url, None).await?;
         let mut request_obj = GetOnlineFeaturesRequest::default();
         request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
-        let result = gcs_registry.request_to_view_keys(&request_obj).await?;
+        let requested_features = RequestedFeatures::from(&request_obj);
+        let result = gcs_registry
+            .request_to_view_keys(requested_features)
+            .await?;
         println!("{:#?}", result);
         Ok(())
     }
