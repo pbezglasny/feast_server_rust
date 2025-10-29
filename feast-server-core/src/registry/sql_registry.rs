@@ -109,7 +109,7 @@ impl SqlFeatureRegistry {
             .into_iter()
             .map(|(name, proto)| {
                 let entity =
-                    crate::model::Entity::try_from(proto).expect("Failed to convert Entity proto");
+                    crate::model::Entity::try_from(proto).map_err(|e| anyhow!("Failed to convert Entity proto for '{}': {}", name, e))?;
                 (name, entity)
             })
             .collect();
