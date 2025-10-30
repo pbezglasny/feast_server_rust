@@ -14,9 +14,9 @@ use anyhow::{Context, Result};
 use anyhow::{Error, anyhow};
 use chrono::{DateTime, Duration, Utc};
 use prost::Message;
+use rustc_hash::FxHashMap as HashMap;
 use serde::ser::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
@@ -191,7 +191,7 @@ impl Default for FeatureProjection {
             feature_view_name: Arc::<str>::from(""),
             feature_view_name_alias: None,
             features: Vec::new(),
-            join_key_map: HashMap::new(),
+            join_key_map: HashMap::default(),
         }
     }
 }

@@ -8,7 +8,8 @@ use crate::model::{
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use rustc_hash::FxHashMap as HashMap;
+use std::collections::{HashSet, hash_map::Entry};
 use std::sync::Arc;
 use tracing;
 
@@ -55,7 +56,7 @@ impl FeatureStore {
         let features_with_keys: Vec<FeatureWithKeys> =
             feature_views_to_keys(&feature_to_view, &request.entities, &lookup_mapping)?;
 
-        let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::new();
+        let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::default();
 
         for feature in features_with_keys.iter() {
             for entity_key in feature.entity_keys.iter() {
@@ -125,7 +126,7 @@ fn build_lookup_key_mapping(
     feature_to_view: &HashMap<Feature, Arc<FeatureView>>,
     entities_from_request: HashSet<Arc<str>>,
 ) -> HashMap<EntityColumnRef, Arc<str>> {
-    let mut mapping = HashMap::new();
+    let mut mapping = HashMap::with_capacity_and_hasher(feature_to_view.len(), Default::default());
 
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
@@ -156,7 +157,7 @@ fn feature_views_to_keys(
     lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
-    let mut key_cache: HashMap<Vec<Arc<str>>, Arc<Vec<Arc<EntityKey>>>> = HashMap::new();
+    let mut key_cache: HashMap<Vec<Arc<str>>, Arc<Vec<Arc<EntityKey>>>> = HashMap::default();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
             result.push(FeatureWithKeys {
@@ -258,7 +259,7 @@ mod tests {
     use crate::feast::types::{value, value_type};
     use crate::model::{EntityIdValue, Field, GetOnlineFeaturesRequest};
     use chrono::Duration;
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap as HashMap;
     use std::sync::Arc;
 
     trait ToValue {
@@ -358,11 +359,11 @@ mod tests {
         };
         let feature_1 = Feature::new("feature_view1", "col1");
         let feature_2 = Feature::new("feature_view2", "col2");
-        let features = HashMap::from([
+        let features = HashMap::from_iter([
             (feature_1.clone(), Arc::new(feature_view_1)),
             (feature_2.clone(), Arc::new(feature_view_2)),
         ]);
-        let requested_entity_keys = HashMap::from([
+        let requested_entity_keys = HashMap::from_iter([
             (
                 Arc::<str>::from("entity_col_1"),
                 vec![
@@ -433,13 +434,13 @@ mod tests {
             let features = get_features_views();
             features[0].clone()
         };
-        feature_view_1.join_key_map = Some(HashMap::from([(
+        feature_view_1.join_key_map = Some(HashMap::from_iter([(
             Arc::<str>::from("entity_col_1"),
             Arc::<str>::from("alias_1"),
         )]));
         let feature_1 = Feature::new("feature_view1", "col1");
-        let features = HashMap::from([(feature_1.clone(), Arc::from(feature_view_1))]);
-        let requested_entity_keys = HashMap::from([(
+        let features = HashMap::from_iter([(feature_1.clone(), Arc::from(feature_view_1))]);
+        let requested_entity_keys = HashMap::from_iter([(
             Arc::<str>::from("alias_1"),
             vec![
                 EntityIdValue::Int(12),
@@ -498,7 +499,7 @@ mod tests {
     async fn get_features() -> Result<()> {
         let store = get_feature_store().await?;
 
-        let entities = HashMap::from([(
+        let entities = HashMap::from_iter([(
             Arc::<str>::from("driver_id"),
             vec![
                 EntityIdValue::Int(1005),
@@ -545,7 +546,7 @@ mod tests {
     async fn get_features_alias() -> Result<()> {
         let store = get_feature_store().await?;
 
-        let entities = HashMap::from([
+        let entities = HashMap::from_iter([
             (
                 Arc::<str>::from("truck_id"),
                 vec![EntityIdValue::Int(1002), EntityIdValue::Int(2003)],

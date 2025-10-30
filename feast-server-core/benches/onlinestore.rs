@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 

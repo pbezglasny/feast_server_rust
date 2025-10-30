@@ -8,9 +8,9 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use prost::Message;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -105,8 +105,8 @@ impl OnlineStore for SqliteOnlineStore {
         &self,
         features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
-        let mut view_to_keys: HashMap<Arc<str>, HashSet<Vec<u8>>> = HashMap::new();
-        let mut view_features: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
+        let mut view_to_keys: HashMap<Arc<str>, HashSet<Vec<u8>>> = HashMap::default();
+        let mut view_features: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::default();
 
         for (entity_key, feature_list) in features {
             let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
@@ -240,7 +240,7 @@ mod test {
             }],
         });
 
-        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from([(
+        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from_iter([(
             HashEntityKey(entity_key),
             vec![Feature::new("driver_hourly_stats", "conv_rate")],
         )]);

@@ -9,7 +9,8 @@ use crate::model::{
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashMap as HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -90,7 +91,7 @@ fn group_rows(
     feature_views: &HashMap<&str, Arc<FeatureView>>,
     lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
 ) -> Result<HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>>> {
-    let mut result: HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>> = HashMap::new();
+    let mut result: HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>> = HashMap::default();
     for row in rows.into_iter() {
         let OnlineStoreRow {
             feature_view_name,
@@ -163,7 +164,7 @@ impl GetOnlineFeatureResponseBuilder {
             next_feature_idx: 1,
             current_entity_idx: 0,
             current_feature_value_idx: 0,
-            feature_to_idx: HashMap::new(),
+            feature_to_idx: HashMap::default(),
             features: Vec::with_capacity(num_features),
             results: Vec::with_capacity(num_features),
         }
@@ -396,12 +397,12 @@ mod tests {
     use crate::model::HashEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap as HashMap;
     use std::sync::Arc;
 
     #[test]
     fn try_from_builds_response_with_missing_values() -> Result<()> {
-        let mut entity_keys = HashMap::new();
+        let mut entity_keys = HashMap::default();
         entity_keys.insert(
             Arc::<str>::from("driver_id"),
             vec![EntityIdValue::Int(1001), EntityIdValue::Int(1002)],
@@ -431,7 +432,7 @@ mod tests {
         feature_view.ttl = Duration::seconds(3600);
         feature_view.entity_names = vec![Arc::<str>::from("driver_id")];
 
-        let mut feature_views = HashMap::new();
+        let mut feature_views = HashMap::default();
         let feature = Arc::from(feature_view);
         let feature_name = feature.name.to_string();
         feature_views.insert(feature_name.as_ref(), feature);

@@ -3,7 +3,7 @@
 use crate::model::{Feature, FeatureView, GetOnlineFeaturesRequest, RequestedFeatures};
 use anyhow::Result;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 
 mod cached_registry;

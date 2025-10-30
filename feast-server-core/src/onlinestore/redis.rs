@@ -18,8 +18,8 @@ use redis::{
     AsyncCommands, Client, ClientTlsConfig, Commands, ConnectionAddr, ConnectionInfo,
     FromRedisValue, IntoConnectionInfo, RedisConnectionInfo, RedisResult, TlsCertificates, TlsMode,
 };
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rustls::crypto::CryptoProvider;
-use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -497,7 +497,7 @@ where
 
         let project_name = self.get_project();
         for (key, feature_vec) in features.iter() {
-            let mut seen_views: HashSet<&str> = HashSet::new();
+            let mut seen_views: HashSet<&str> = HashSet::default();
             let mut feature_keys: Vec<Vec<u8>> = vec![];
             let mut hset_entity_key = crate::key_serialization::serialize_key(
                 &key.0,
@@ -539,7 +539,7 @@ where
         }
         let mut result_rows: Vec<OnlineStoreRow> = vec![];
         let mut timestamp_map: HashMap<(&str, &HashEntityKey), Option<DateTime<Utc>>> =
-            HashMap::new();
+            HashMap::default();
         for (request, value) in entities.into_iter().zip(results.into_iter().flatten()) {
             match request {
                 RedisRequest::FeatureRow {
@@ -608,7 +608,7 @@ mod tests {
     use crate::onlinestore::OnlineStore;
     use anyhow::Result;
     use redis::aio::ConnectionManager;
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap as HashMap;
     use std::sync::Arc;
 
     impl super::RedisSingleNodeOnlineStore {
@@ -631,7 +631,7 @@ mod tests {
         let redis_store =
             super::RedisSingleNodeOnlineStore::new_from_manager("careful_tomcat".to_string(), con)
                 .await?;
-        let arg = HashMap::from([(
+        let arg = HashMap::from_iter([(
             HashEntityKey(Arc::new(EntityKey {
                 join_keys: vec!["driver_id".to_string()],
                 entity_values: vec![Value {

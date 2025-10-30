@@ -11,7 +11,7 @@ use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStor
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 use tracing::debug;
 

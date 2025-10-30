@@ -8,7 +8,7 @@ use crate::registry::FeatureRegistryService;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use prost::Message;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::io::Read;
@@ -75,7 +75,7 @@ impl FileFeatureRegistry {
             )
             .into());
         }
-        let mut result: HashMap<Feature, Arc<FeatureView>> = HashMap::new();
+        let mut result: HashMap<Feature, Arc<FeatureView>> = HashMap::default();
         for resolved in &service.resolved_projections {
             if self
                 .registry
@@ -86,8 +86,7 @@ impl FileFeatureRegistry {
             }
 
             for field in resolved.feature_view.features.iter() {
-                let feature =
-                    Feature::new(resolved.feature_view.name.clone(), field.name.clone());
+                let feature = Feature::new(resolved.feature_view.name.clone(), field.name.clone());
                 result.insert(feature, resolved.feature_view.clone());
             }
         }

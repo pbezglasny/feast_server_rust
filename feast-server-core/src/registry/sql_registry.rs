@@ -4,10 +4,10 @@ use crate::model::{
 };
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
+use rustc_hash::FxHashMap as HashMap;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Acquire, Database, Executor, Pool, Postgres};
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 

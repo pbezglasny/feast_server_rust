@@ -22,7 +22,7 @@ use feast_server_core::model::{
     GetOnlineFeaturesRequest, ValueWrapper,
 };
 use prost_types::Timestamp;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::fs;
@@ -47,7 +47,7 @@ impl FeastGrpcService {
     fn from_request_proto(
         request: GrpcGetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeaturesRequest, GrpcStatus> {
-        let mut entities: HashMap<Arc<str>, Vec<EntityIdValue>> = HashMap::new();
+        let mut entities: HashMap<Arc<str>, Vec<EntityIdValue>> = HashMap::default();
         for (entity_name, values) in request.entities {
             entities.insert(
                 Arc::from(entity_name.clone()),

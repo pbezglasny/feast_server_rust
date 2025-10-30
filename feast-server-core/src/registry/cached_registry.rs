@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use google_cloud_storage::client::{Client as GcsClient, ClientConfig};
 use prost::Message;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::ops::Add;
 use std::path::PathBuf;
 use std::sync::Arc;
