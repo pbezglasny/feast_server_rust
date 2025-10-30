@@ -582,7 +582,7 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
 }
 
 impl FeatureRegistry {
-    fn resolve_feature_services(&mut self) -> Result<()> {
+    fn resolve_feature_services(&mut self) {
         for feature_service in self.feature_services.values_mut() {
             let mut resolved_projections = Vec::new();
             for projection in &feature_service.projections {
@@ -604,7 +604,6 @@ impl FeatureRegistry {
             }
             feature_service.resolved_projections = resolved_projections;
         }
-        Ok(())
     }
 }
 

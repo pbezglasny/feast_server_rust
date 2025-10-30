@@ -65,7 +65,7 @@ pub async fn feature_store() -> Result<Arc<FeatureStore>> {
 
 pub fn sample_request() -> GetOnlineFeaturesRequest {
     let entities = HashMap::from([(
-        "driver_id".to_string(),
+        Arc::<str>::from("driver_id"),
         vec![
             EntityIdValue::Int(1005),
             EntityIdValue::Int(1002),
