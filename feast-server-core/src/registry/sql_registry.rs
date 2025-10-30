@@ -9,6 +9,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Acquire, Database, Executor, Pool, Postgres};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 const FEAST_SQL_REGISTRY_MAX_CONNECTIONS_ENV_VAR: &str = "FEAST_SQL_REGISTRY_MAX_CONNECTIONS";
 const DEFAULT_MAX_CONNECTIONS: u32 = 5;
@@ -154,7 +155,7 @@ impl SqlFeatureRegistry {
         }
 
         let entities = query_table::<Entity>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "entities",
             "entity_name",
@@ -164,7 +165,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let feature_views = query_table::<FeatureView>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "feature_views",
             "feature_view_name",
@@ -174,7 +175,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let on_demand_feature_views = query_table::<crate::model::OnDemandFeatureView>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "on_demand_feature_views",
             "feature_view_name",
@@ -184,7 +185,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let feature_services = query_table::<FeatureService>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "feature_services",
             "feature_service_name",

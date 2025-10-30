@@ -6,6 +6,10 @@ edition = "2024"
 [profile.release]
 strip = true
 lto = true
+#strip = "none"
+#lto = "off"
+#debug = true
+#codegen-units = 1
 
 
 [workspace]

@@ -43,13 +43,13 @@ impl<'a> From<&'a Feature> for FeatureRef<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RequestEntityIdKey {
-    pub name: String,
+    pub name: Arc<str>,
     pub value: EntityIdValue,
 }
 
 fn get_feature_status(
     value: &Value,
-    feature_view: Option<&FeatureView>,
+    feature_view: Option<Arc<FeatureView>>,
     event_ts: &DateTime<Utc>,
 ) -> FeatureStatus {
     if value.val.is_none() {
@@ -80,15 +80,15 @@ fn val_to_entity_id_value(value: &Val) -> Result<EntityIdValue> {
 
 fn entity_less_request_entity_key() -> RequestEntityIdKey {
     RequestEntityIdKey {
-        name: DUMMY_ENTITY_ID.to_string(),
+        name: Arc::<str>::from(DUMMY_ENTITY_ID),
         value: EntityIdValue::String(DUMMY_ENTITY_VAL.to_string()),
     }
 }
 
 fn group_rows(
     rows: Vec<OnlineStoreRow>,
-    feature_views: &HashMap<&str, &FeatureView>,
-    lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
+    feature_views: &HashMap<&str, Arc<FeatureView>>,
+    lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
 ) -> Result<HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>>> {
     let mut result: HashMap<RequestEntityIdKey, Vec<ResponseFeatureRow>> = HashMap::new();
     for row in rows.into_iter() {
@@ -106,7 +106,9 @@ fn group_rows(
             ));
         }
         let entity_key_name = entity_key.0.join_keys[0].clone();
-        let entity_col_ref = EntityColumnRef::new(&feature_view_name, &entity_key_name);
+        let entity_col_ref =
+            // todo replace returned row with reference to avoid allocation
+            EntityColumnRef::new(Arc::from(feature_view_name), Arc::from(entity_key_name));
         let lookup_key = lookup_mapping
             .get(&entity_col_ref)
             .expect("programming error: lookup_mapping should contain all entity columns");
@@ -122,14 +124,16 @@ fn group_rows(
         };
         let status: FeatureStatus = get_feature_status(
             &value,
-            feature_views.get(feature_view_name.as_str()).copied(),
+            feature_views
+                .get(entity_col_ref.view_name.as_ref())
+                .cloned(),
             &event_ts,
         );
         result
             .entry(request_entity_key)
             .or_default()
             .push(ResponseFeatureRow(
-                Feature::new(feature_view_name, feature_name),
+                Feature::new(entity_col_ref.view_name.clone(), feature_name),
                 value,
                 status,
                 event_ts,
@@ -146,7 +150,7 @@ struct GetOnlineFeatureResponseBuilder {
     feature_to_idx: HashMap<Feature, usize>,
     current_entity_idx: usize,
     current_feature_value_idx: usize,
-    features: Vec<String>,
+    features: Vec<Arc<str>>,
     results: Vec<FeatureResults>,
 }
 
@@ -170,7 +174,7 @@ impl GetOnlineFeatureResponseBuilder {
         self
     }
 
-    fn with_entity_key_name(mut self, entity_key_name: String) -> Self {
+    fn with_entity_key_name(mut self, entity_key_name: Arc<str>) -> Self {
         if self.features.len() <= self.current_entity_idx {
             self.features.push(entity_key_name);
         } else {
@@ -233,9 +237,12 @@ impl GetOnlineFeatureResponseBuilder {
                 event_timestamps: Vec::with_capacity(self.num_values),
             });
             let feature_name = if self.full_feature_names {
-                format!("{}.{}", feature.feature_view_name, feature.feature_name)
+                Arc::from(format!(
+                    "{}.{}",
+                    feature.feature_view_name, feature.feature_name
+                ))
             } else {
-                feature.feature_name.as_ref().to_string()
+                feature.feature_name
             };
             self.features.push(feature_name);
         }
@@ -262,9 +269,12 @@ impl GetOnlineFeatureResponseBuilder {
     fn add_missing_features(mut self, features: HashSet<Feature>) -> Self {
         for feature in features {
             let feature_name = if self.full_feature_names {
-                format!("{}__{}", feature.feature_view_name, feature.feature_name)
+                Arc::from(format!(
+                    "{}__{}",
+                    feature.feature_view_name, feature.feature_name
+                ))
             } else {
-                feature.feature_name.as_ref().to_string()
+                feature.feature_name
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
@@ -288,9 +298,9 @@ impl GetOnlineFeatureResponseBuilder {
                 feature_name,
             } = feature;
             let feature_name = if self.full_feature_names {
-                format!("{}__{}", feature_view_name, feature_name)
+                Arc::from(format!("{}__{}", feature_view_name, feature_name))
             } else {
-                feature_name.as_ref().to_string()
+                feature_name
             };
             self.features.push(feature_name);
             self.results.push(FeatureResults {
@@ -331,10 +341,10 @@ impl GetOnlineFeatureResponse {
     /// `typed_features` - list of requested features with types
     /// `full_feature_names` - use full feature names in result object
     pub(crate) fn try_from(
-        entity_keys: HashMap<String, Vec<EntityIdValue>>,
+        entity_keys: HashMap<Arc<str>, Vec<EntityIdValue>>,
         rows: Vec<OnlineStoreRow>,
-        feature_views: HashMap<&str, &FeatureView>,
-        lookup_mapping: &HashMap<EntityColumnRef<'_>, String>,
+        feature_views: HashMap<&str, Arc<FeatureView>>,
+        lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
         mut feature_set: HashSet<Feature>,
         full_feature_names: bool,
     ) -> Result<Self> {
@@ -393,7 +403,7 @@ mod tests {
     fn try_from_builds_response_with_missing_values() -> Result<()> {
         let mut entity_keys = HashMap::new();
         entity_keys.insert(
-            "driver_id".to_string(),
+            Arc::<str>::from("driver_id"),
             vec![EntityIdValue::Int(1001), EntityIdValue::Int(1002)],
         );
 
@@ -419,18 +429,23 @@ mod tests {
         let mut feature_view = FeatureView::default();
         feature_view.name = Arc::<str>::from("driver_hourly_stats");
         feature_view.ttl = Duration::seconds(3600);
-        feature_view.entity_names = vec!["driver_id".to_string()];
+        feature_view.entity_names = vec![Arc::<str>::from("driver_id")];
 
         let mut feature_views = HashMap::new();
-        feature_views.insert(feature_view.name.as_ref(), &feature_view);
+        let feature = Arc::from(feature_view);
+        let feature_name = feature.name.to_string();
+        feature_views.insert(feature_name.as_ref(), feature);
 
         let features: HashSet<Feature> = vec![Feature::new("driver_hourly_stats", "acc_rate")]
             .into_iter()
             .collect();
 
-        let lookup_mapping: HashMap<EntityColumnRef, String> = vec![(
-            EntityColumnRef::new("driver_hourly_stats", "driver_id"),
-            "driver_id".to_string(),
+        let lookup_mapping: HashMap<EntityColumnRef, Arc<str>> = vec![(
+            EntityColumnRef::new(
+                Arc::<str>::from("driver_hourly_stats"),
+                Arc::<str>::from("driver_id"),
+            ),
+            Arc::<str>::from("driver_id"),
         )]
         .into_iter()
         .collect();
@@ -445,7 +460,8 @@ mod tests {
         )?;
 
         let mut expected = GetOnlineFeatureResponse::default();
-        expected.metadata.feature_names = vec!["driver_id".to_string(), "acc_rate".to_string()];
+        expected.metadata.feature_names =
+            vec![Arc::<str>::from("driver_id"), Arc::<str>::from("acc_rate")];
         expected.results.push(FeatureResults {
             values: vec![
                 ValueWrapper::from(EntityIdValue::Int(1001)),

@@ -58,7 +58,7 @@ impl EntityIdValue {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GetOnlineFeaturesRequest {
-    pub entities: HashMap<String, Vec<EntityIdValue>>,
+    pub entities: HashMap<Arc<str>, Vec<EntityIdValue>>,
     pub feature_service: Option<String>,
     pub features: Option<Vec<String>>,
     pub full_feature_names: Option<bool>,
@@ -66,7 +66,7 @@ pub struct GetOnlineFeaturesRequest {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GetOnlineFeatureResponseMetadata {
-    pub feature_names: Vec<String>,
+    pub feature_names: Vec<Arc<str>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -168,7 +168,7 @@ impl<'de> Deserialize<'de> for ValueTypeEnum {
 
 #[derive(Debug, Clone, Default)]
 pub struct Field {
-    pub name: String,
+    pub name: Arc<str>,
     pub value_type: ValueTypeEnum,
 }
 
@@ -177,7 +177,12 @@ pub struct FeatureProjection {
     pub feature_view_name: Arc<str>,
     pub feature_view_name_alias: Option<Arc<str>>,
     pub features: Vec<Field>,
-    pub join_key_map: HashMap<String, String>,
+    pub join_key_map: HashMap<Arc<str>, Arc<str>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedFeatureProjection {
+    pub feature_view: Arc<FeatureView>,
 }
 
 impl Default for FeatureProjection {
@@ -194,18 +199,18 @@ impl Default for FeatureProjection {
 #[derive(Debug, Clone)]
 pub struct FeatureView {
     pub name: Arc<str>,
-    pub features: Vec<Field>,
+    pub features: Arc<Vec<Field>>,
     pub ttl: Duration,
-    pub entity_names: Vec<String>,
+    pub entity_names: Vec<Arc<str>>,
     pub entity_columns: Vec<Field>,
-    pub join_key_map: Option<HashMap<String, String>>,
+    pub join_key_map: Option<HashMap<Arc<str>, Arc<str>>>,
 }
 
 impl Default for FeatureView {
     fn default() -> Self {
         Self {
             name: Arc::<str>::from(""),
-            features: Vec::new(),
+            features: Arc::from(Vec::new()),
             ttl: Duration::zero(),
             entity_names: Vec::new(),
             entity_columns: Vec::new(),
@@ -232,6 +237,8 @@ pub struct FeatureService {
     pub created_timestamp: Option<DateTime<Utc>>,
     pub last_updated_timestamp: Option<DateTime<Utc>>,
     pub projections: Vec<FeatureProjection>,
+    pub resolved_projections: Vec<ResolvedFeatureProjection>,
+    pub missing_feature_views: Vec<String>,
     pub logging_config: Option<LoggingConfig>,
 }
 
@@ -425,7 +432,7 @@ impl TryFrom<&str> for Feature {
 impl<'a> From<&'a GetOnlineFeaturesRequest> for RequestedFeatures<'a> {
     fn from(get_online_feature_request: &'a GetOnlineFeaturesRequest) -> Self {
         if let Some(feature_service) = &get_online_feature_request.feature_service {
-            RequestedFeatures::FeatureService(&feature_service)
+            RequestedFeatures::FeatureService(feature_service)
         } else if let Some(features) = &get_online_feature_request.features {
             RequestedFeatures::FeatureNames(features)
         } else {
@@ -468,7 +475,7 @@ impl TryFrom<FeatureSpecV2Proto> for Field {
             )
         })?;
         Ok(Field {
-            name: feature_spec_proto.name,
+            name: Arc::from(feature_spec_proto.name),
             value_type,
         })
     }
@@ -486,14 +493,18 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
             feature_view_name: projection_proto.feature_view_name.into(),
             feature_view_name_alias: Some(projection_proto.feature_view_name_alias.into()),
             features: features?,
-            join_key_map: projection_proto.join_key_map,
+            join_key_map: projection_proto
+                .join_key_map
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
         })
     }
 }
 
 impl FeatureView {
     pub fn is_entity_less(&self) -> bool {
-        self.entity_names.len() == 1 && self.entity_names[0] == DUMMY_ENTITY_NAME
+        self.entity_names.len() == 1 && self.entity_names[0] == DUMMY_ENTITY_NAME.into()
     }
 }
 
@@ -506,18 +517,18 @@ impl TryFrom<FeatureViewProto> for FeatureView {
         let features: Result<Vec<Field>> = spec.features.into_iter().map(Field::try_from).collect();
         Ok(FeatureView {
             name: spec.name.into(),
-            features: features?,
+            features: Arc::from(features?),
             ttl: spec
                 .ttl
                 .as_ref()
                 .map(prost_duration_to_duration)
                 .unwrap_or_else(Duration::zero),
-            entity_names: spec.entities,
+            entity_names: spec.entities.into_iter().map(Arc::<str>::from).collect(),
             entity_columns: spec
                 .entity_columns
                 .into_iter()
                 .map(|col| Field {
-                    name: col.name,
+                    name: col.name.into(),
                     value_type: ValueTypeEnum::try_from(col.value_type).unwrap(),
                 })
                 .collect(),
@@ -563,8 +574,37 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
                 .last_updated_timestamp
                 .map(|ts| prost_timestamp_to_datetime(&ts)),
             projections: projections?,
+            resolved_projections: Vec::new(),
+            missing_feature_views: Vec::new(),
             logging_config: None,
         })
+    }
+}
+
+impl FeatureRegistry {
+    fn resolve_feature_services(&mut self) -> Result<()> {
+        for feature_service in self.feature_services.values_mut() {
+            let mut resolved_projections = Vec::new();
+            for projection in &feature_service.projections {
+                if let Some(view) = self
+                    .feature_views
+                    .get(projection.feature_view_name.as_ref())
+                {
+                    let mut resolved_feature_view = view.clone();
+                    resolved_feature_view.join_key_map = Some(projection.join_key_map.clone());
+                    let feature_view = Arc::new(resolved_feature_view);
+                    resolved_projections.push(ResolvedFeatureProjection {
+                        feature_view: feature_view.clone(),
+                    });
+                } else {
+                    feature_service
+                        .missing_feature_views
+                        .push(projection.feature_view_name.as_ref().to_string());
+                }
+            }
+            feature_service.resolved_projections = resolved_projections;
+        }
+        Ok(())
     }
 }
 
@@ -603,12 +643,14 @@ impl TryFrom<RegistryProto> for FeatureRegistry {
                 Ok((feature_service.name.clone(), feature_service))
             })
             .collect();
-        Ok(FeatureRegistry {
+        let mut registry = FeatureRegistry {
             entities: entities?,
             feature_views: feature_views?,
             on_demand_feature_views: ondemand_feature_views?,
             feature_services: feature_services?,
-        })
+        };
+        registry.resolve_feature_services();
+        Ok(registry)
     }
 }
 

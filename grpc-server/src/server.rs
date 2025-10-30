@@ -47,10 +47,10 @@ impl FeastGrpcService {
     fn from_request_proto(
         request: GrpcGetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeaturesRequest, GrpcStatus> {
-        let mut entities: HashMap<String, Vec<EntityIdValue>> = HashMap::new();
+        let mut entities: HashMap<Arc<str>, Vec<EntityIdValue>> = HashMap::new();
         for (entity_name, values) in request.entities {
             entities.insert(
-                entity_name.clone(),
+                Arc::from(entity_name.clone()),
                 repeated_value_to_entity_ids(entity_name.as_str(), values)?,
             );
         }
@@ -78,7 +78,12 @@ impl FeastGrpcService {
     ) -> Result<GetOnlineFeaturesResponse, GrpcStatus> {
         let metadata = Some(GetOnlineFeaturesResponseMetadata {
             feature_names: Some(FeatureList {
-                val: response.metadata.feature_names,
+                val: response
+                    .metadata
+                    .feature_names
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect(),
             }),
         });
 

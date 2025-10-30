@@ -20,5 +20,5 @@ pub trait FeatureRegistryService: Send + Sync {
     async fn request_to_view_keys<'a>(
         &'a self,
         request: RequestedFeatures<'a>,
-    ) -> Result<HashMap<Feature, FeatureView>>;
+    ) -> Result<HashMap<Feature, Arc<FeatureView>>>;
 }
