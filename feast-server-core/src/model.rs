@@ -592,6 +592,7 @@ impl FeatureRegistry {
                 {
                     let mut resolved_feature_view = view.clone();
                     resolved_feature_view.join_key_map = Some(projection.join_key_map.clone());
+                    resolved_feature_view.features = Arc::new(projection.features.clone());
                     let feature_view = Arc::new(resolved_feature_view);
                     resolved_projections.push(ResolvedFeatureProjection {
                         feature_view: feature_view.clone(),

@@ -76,21 +76,19 @@ impl FileFeatureRegistry {
             .into());
         }
         let mut result: HashMap<Feature, Arc<FeatureView>> = HashMap::new();
-        for projection in &service.projections {
+        for resolved in &service.resolved_projections {
             if self
                 .registry
                 .on_demand_feature_views
-                .contains_key(projection.feature_view_name.as_ref())
+                .contains_key(resolved.feature_view.name.as_ref())
             {
                 return Err(anyhow!("OnDemand feature view for now is not supported"));
             }
 
-            for resolved in &service.resolved_projections {
-                for field in resolved.feature_view.features.as_ref() {
-                    let feature =
-                        Feature::new(resolved.feature_view.name.clone(), field.name.clone());
-                    result.insert(feature, resolved.feature_view.clone());
-                }
+            for field in resolved.feature_view.features.iter() {
+                let feature =
+                    Feature::new(resolved.feature_view.name.clone(), field.name.clone());
+                result.insert(feature, resolved.feature_view.clone());
             }
         }
         Ok(result)
