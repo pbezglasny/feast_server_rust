@@ -242,12 +242,56 @@ pub struct FeatureService {
     pub logging_config: Option<LoggingConfig>,
 }
 
+// todo make fields private and add getters
 #[derive(Debug, Clone, Default)]
 pub struct FeatureRegistry {
     pub entities: HashMap<String, Entity>,
     pub feature_views: HashMap<String, FeatureView>,
     pub on_demand_feature_views: HashMap<String, OnDemandFeatureView>,
     pub feature_services: HashMap<String, FeatureService>,
+}
+
+impl FeatureRegistry {
+    pub fn new(
+        entities: HashMap<String, Entity>,
+        feature_views: HashMap<String, FeatureView>,
+        on_demand_feature_views: HashMap<String, OnDemandFeatureView>,
+        feature_services: HashMap<String, FeatureService>,
+    ) -> Self {
+        let mut registry = FeatureRegistry {
+            entities,
+            feature_views,
+            on_demand_feature_views,
+            feature_services,
+        };
+        registry.resolve_feature_services();
+        registry
+    }
+
+    fn resolve_feature_services(&mut self) {
+        for feature_service in self.feature_services.values_mut() {
+            let mut resolved_projections = Vec::new();
+            for projection in &feature_service.projections {
+                if let Some(view) = self
+                    .feature_views
+                    .get(projection.feature_view_name.as_ref())
+                {
+                    let mut resolved_feature_view = view.clone();
+                    resolved_feature_view.join_key_map = Some(projection.join_key_map.clone());
+                    resolved_feature_view.features = Arc::new(projection.features.clone());
+                    let feature_view = Arc::new(resolved_feature_view);
+                    resolved_projections.push(ResolvedFeatureProjection {
+                        feature_view: feature_view.clone(),
+                    });
+                } else {
+                    feature_service
+                        .missing_feature_views
+                        .push(projection.feature_view_name.as_ref().to_string());
+                }
+            }
+            feature_service.resolved_projections = resolved_projections;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -578,33 +622,6 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
             missing_feature_views: Vec::new(),
             logging_config: None,
         })
-    }
-}
-
-impl FeatureRegistry {
-    fn resolve_feature_services(&mut self) {
-        for feature_service in self.feature_services.values_mut() {
-            let mut resolved_projections = Vec::new();
-            for projection in &feature_service.projections {
-                if let Some(view) = self
-                    .feature_views
-                    .get(projection.feature_view_name.as_ref())
-                {
-                    let mut resolved_feature_view = view.clone();
-                    resolved_feature_view.join_key_map = Some(projection.join_key_map.clone());
-                    resolved_feature_view.features = Arc::new(projection.features.clone());
-                    let feature_view = Arc::new(resolved_feature_view);
-                    resolved_projections.push(ResolvedFeatureProjection {
-                        feature_view: feature_view.clone(),
-                    });
-                } else {
-                    feature_service
-                        .missing_feature_views
-                        .push(projection.feature_view_name.as_ref().to_string());
-                }
-            }
-            feature_service.resolved_projections = resolved_projections;
-        }
     }
 }
 

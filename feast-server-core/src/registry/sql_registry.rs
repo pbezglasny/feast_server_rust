@@ -194,12 +194,12 @@ impl SqlFeatureRegistry {
         )
         .await?;
 
-        Ok(FileFeatureRegistry::from_registry(FeatureRegistry {
+        Ok(FileFeatureRegistry::from_registry(FeatureRegistry::new(
             entities,
             feature_views,
             on_demand_feature_views,
             feature_services,
-        }))
+        )))
     }
 }
 
