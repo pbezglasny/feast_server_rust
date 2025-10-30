@@ -17,9 +17,9 @@ use tracing::debug;
 
 #[derive(Debug)]
 pub struct OnlineStoreRow {
-    pub feature_view_name: String,
+    pub feature_view_name: Arc<str>,
     pub entity_key: HashEntityKey,
-    pub feature_name: String,
+    pub feature_name: Arc<str>,
     pub value: Value,
     pub event_ts: DateTime<Utc>,
     pub created_ts: Option<DateTime<Utc>>,

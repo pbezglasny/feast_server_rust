@@ -93,13 +93,13 @@ pub struct FeatureWithKeys {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct EntityColumnRef {
-    pub view_name: Arc<str>,
-    pub column_name: Arc<str>,
+pub(crate) struct EntityColumnRef<'a> {
+    pub view_name: &'a str,
+    pub column_name: &'a str,
 }
 
-impl EntityColumnRef {
-    pub(crate) fn new(view_name: Arc<str>, column_name: Arc<str>) -> Self {
+impl<'a> EntityColumnRef<'a> {
+    pub(crate) fn new(view_name: &'a str, column_name: &'a str) -> Self {
         Self {
             view_name,
             column_name,
@@ -122,10 +122,10 @@ struct LookupKey {
     value_type: value_type::Enum,
 }
 
-fn build_lookup_key_mapping(
-    feature_to_view: &HashMap<Feature, Arc<FeatureView>>,
+fn build_lookup_key_mapping<'a>(
+    feature_to_view: &'a HashMap<Feature, Arc<FeatureView>>,
     entities_from_request: HashSet<Arc<str>>,
-) -> HashMap<EntityColumnRef, Arc<str>> {
+) -> HashMap<EntityColumnRef<'a>, Arc<str>> {
     let mut mapping = HashMap::with_capacity_and_hasher(feature_to_view.len(), Default::default());
 
     for (feature, view) in feature_to_view {
@@ -142,7 +142,7 @@ fn build_lookup_key_mapping(
             } else {
                 col.name.clone()
             };
-            let key = EntityColumnRef::new(view.name.clone(), col.name.clone());
+            let key = EntityColumnRef::new(view.name.as_ref(), col.name.as_ref());
             mapping.insert(key, lookup_name.clone());
         }
     }
@@ -170,7 +170,8 @@ fn feature_views_to_keys(
                 .entity_columns
                 .iter()
                 .map(|col| {
-                    let entity_col_ref = EntityColumnRef::new(view.name.clone(), col.name.clone());
+                    let entity_col_ref =
+                        EntityColumnRef::new(view.name.as_ref(), col.name.as_ref());
                     lookup_mapping
                         .get(&entity_col_ref)
                         .map(|lookup| LookupKey {

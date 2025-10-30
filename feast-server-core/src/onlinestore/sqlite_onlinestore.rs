@@ -37,14 +37,14 @@ impl Default for ConnectionOptions {
 #[derive(Debug)]
 pub struct SqliteStoreRow {
     pub entity_key: Vec<u8>,
-    pub feature_name: String,
+    pub feature_name: Arc<str>,
     pub value: Vec<u8>,
     pub event_ts: DateTime<Utc>,
     pub created_ts: DateTime<Utc>,
 }
 
 impl SqliteStoreRow {
-    fn try_into_online_store_row(self, feature_view_name: &str) -> Result<OnlineStoreRow> {
+    fn try_into_online_store_row(self, feature_view_name: Arc<str>) -> Result<OnlineStoreRow> {
         let Self {
             entity_key,
             feature_name,
@@ -67,7 +67,7 @@ impl SqliteStoreRow {
                 )
             })?;
         Ok(OnlineStoreRow {
-            feature_view_name: feature_view_name.to_owned(),
+            feature_view_name,
             entity_key: HashEntityKey(Arc::new(entity_key)),
             feature_name,
             value: decoded_value,
@@ -86,7 +86,7 @@ impl FromRow<'_, SqliteRow> for SqliteStoreRow {
         let created_ts: DateTime<Utc> = row.try_get("created_ts")?;
         Ok(Self {
             entity_key,
-            feature_name,
+            feature_name: Arc::from(feature_name),
             value,
             event_ts,
             created_ts,
@@ -156,7 +156,7 @@ impl OnlineStore for SqliteOnlineStore {
                 match sqlx_query.fetch_all(&mut *connection).await {
                     Ok(rows) => rows
                         .into_iter()
-                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(&view_name))
+                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(view_name.clone()))
                         .collect::<Result<Vec<_>>>(),
                     Err(sqlx::Error::Database(db_err))
                         if db_err.message().contains("no such table") =>

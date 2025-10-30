@@ -471,13 +471,13 @@ pub async fn from_config(
 
 enum RedisRequest<'a> {
     FeatureRow {
-        feature_view_name: &'a str,
+        feature_view_name: Arc<str>,
         entity_key: &'a HashEntityKey,
-        feature_name: &'a str,
+        feature_name: Arc<str>,
     },
     TimestampRow {
         entity_key: &'a HashEntityKey,
-        feature_view_name: &'a str,
+        feature_view_name: Arc<str>,
     },
 }
 
@@ -497,7 +497,7 @@ where
 
         let project_name = self.get_project();
         for (key, feature_vec) in features.iter() {
-            let mut seen_views: HashSet<&str> = HashSet::default();
+            let mut seen_views: HashSet<Arc<str>> = HashSet::default();
             let mut feature_keys: Vec<Vec<u8>> = vec![];
             let mut hset_entity_key = crate::key_serialization::serialize_key(
                 &key.0,
@@ -505,14 +505,14 @@ where
             )?;
             hset_entity_key.extend_from_slice(project_name.as_bytes());
             for feature in feature_vec {
-                let view_name = feature.feature_view_name.as_ref();
-                let feature_name = feature.feature_name.as_ref();
-                if !seen_views.contains(view_name) {
-                    seen_views.insert(view_name);
-                    feature_keys.push(["_ts:", view_name].concat().as_bytes().to_vec());
+                let view_name = feature.feature_view_name.clone();
+                let feature_name = feature.feature_name.clone();
+                if !seen_views.contains(view_name.as_ref()) {
+                    seen_views.insert(view_name.clone());
+                    feature_keys.push(["_ts:", view_name.as_ref()].concat().as_bytes().to_vec());
                     entities.push(RedisRequest::TimestampRow {
                         entity_key: key,
-                        feature_view_name: view_name,
+                        feature_view_name: view_name.clone(),
                     });
                 }
                 feature_keys.push(feature_redis_key(feature)?);
@@ -538,7 +538,7 @@ where
             ));
         }
         let mut result_rows: Vec<OnlineStoreRow> = vec![];
-        let mut timestamp_map: HashMap<(&str, &HashEntityKey), Option<DateTime<Utc>>> =
+        let mut timestamp_map: HashMap<(Arc<str>, &HashEntityKey), Option<DateTime<Utc>>> =
             HashMap::default();
         for (request, value) in entities.into_iter().zip(results.into_iter().flatten()) {
             match request {
@@ -548,7 +548,7 @@ where
                     feature_name,
                 } => {
                     let ts = timestamp_map
-                        .get(&(feature_view_name, entity_key))
+                        .get(&(feature_view_name.clone(), entity_key))
                         .cloned()
                         .flatten()
                         .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
@@ -562,9 +562,9 @@ where
                         None => FeastValue::default(),
                     };
                     result_rows.push(OnlineStoreRow {
-                        feature_view_name: feature_view_name.to_string(),
+                        feature_view_name,
                         entity_key: entity_key.clone(),
-                        feature_name: feature_name.to_string(),
+                        feature_name,
                         value: decoded_value,
                         event_ts: ts,
                         created_ts: None,

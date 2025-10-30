@@ -107,9 +107,7 @@ fn group_rows(
             ));
         }
         let entity_key_name = entity_key.0.join_keys[0].clone();
-        let entity_col_ref =
-            // todo replace returned row with reference to avoid allocation
-            EntityColumnRef::new(Arc::from(feature_view_name), Arc::from(entity_key_name));
+        let entity_col_ref = EntityColumnRef::new(feature_view_name.as_ref(), &entity_key_name);
         let lookup_key = lookup_mapping
             .get(&entity_col_ref)
             .expect("programming error: lookup_mapping should contain all entity columns");
@@ -125,16 +123,14 @@ fn group_rows(
         };
         let status: FeatureStatus = get_feature_status(
             &value,
-            feature_views
-                .get(entity_col_ref.view_name.as_ref())
-                .cloned(),
+            feature_views.get(entity_col_ref.view_name).cloned(),
             &event_ts,
         );
         result
             .entry(request_entity_key)
             .or_default()
             .push(ResponseFeatureRow(
-                Feature::new(entity_col_ref.view_name.clone(), feature_name),
+                Feature::new(entity_col_ref.view_name, feature_name),
                 value,
                 status,
                 event_ts,
@@ -341,11 +337,11 @@ impl GetOnlineFeatureResponse {
     /// `feature_views` - mapping feature_view name to its declaration
     /// `typed_features` - list of requested features with types
     /// `full_feature_names` - use full feature names in result object
-    pub(crate) fn try_from(
+    pub(crate) fn try_from<'a>(
         entity_keys: HashMap<Arc<str>, Vec<EntityIdValue>>,
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<&str, Arc<FeatureView>>,
-        lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
+        lookup_mapping: &'a HashMap<EntityColumnRef<'a>, Arc<str>>,
         mut feature_set: HashSet<Feature>,
         full_feature_names: bool,
     ) -> Result<Self> {
@@ -397,7 +393,7 @@ mod tests {
     use crate::model::HashEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
-    use rustc_hash::FxHashMap as HashMap;
+    use rustc_hash::{FxHashMap as HashMap, FxHashMap};
     use std::sync::Arc;
 
     #[test]
@@ -419,9 +415,9 @@ mod tests {
             }],
         });
         let row = OnlineStoreRow {
-            feature_view_name: "driver_hourly_stats".to_string(),
+            feature_view_name: Arc::from("driver_hourly_stats"),
             entity_key: HashEntityKey(entity_key),
-            feature_name: "acc_rate".to_string(),
+            feature_name: Arc::from("acc_rate"),
             value: feature_value.clone(),
             event_ts,
             created_ts: None,
@@ -442,11 +438,8 @@ mod tests {
             .collect();
 
         let lookup_mapping: HashMap<EntityColumnRef, Arc<str>> = vec![(
-            EntityColumnRef::new(
-                Arc::<str>::from("driver_hourly_stats"),
-                Arc::<str>::from("driver_id"),
-            ),
-            Arc::<str>::from("driver_id"),
+            EntityColumnRef::new("driver_hourly_stats", "driver_id"),
+            Arc::from("driver_id"),
         )]
         .into_iter()
         .collect();
