@@ -116,9 +116,9 @@ fn entity_key_for_entity_less_feature() -> Arc<Vec<Arc<EntityKey>>> {
     })])
 }
 
-struct LookupKey {
-    origin_col_name: Arc<str>,
-    lookup: Arc<str>,
+struct LookupKey<'a> {
+    origin_col_name: &'a str,
+    lookup: &'a str,
     value_type: value_type::Enum,
 }
 
@@ -157,7 +157,7 @@ fn feature_views_to_keys(
     lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
-    let mut key_cache: HashMap<Vec<Arc<str>>, Arc<Vec<Arc<EntityKey>>>> = HashMap::default();
+    let mut key_cache: HashMap<Vec<&str>, Arc<Vec<Arc<EntityKey>>>> = HashMap::default();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
             result.push(FeatureWithKeys {
@@ -175,8 +175,8 @@ fn feature_views_to_keys(
                     lookup_mapping
                         .get(&entity_col_ref)
                         .map(|lookup| LookupKey {
-                            origin_col_name: col.name.clone(),
-                            lookup: lookup.clone(),
+                            origin_col_name: col.name.as_ref(),
+                            lookup: lookup.as_ref(),
                             value_type: col.value_type,
                         })
                         .ok_or_else(|| {
@@ -195,7 +195,7 @@ fn feature_views_to_keys(
                 ));
             }
             for lookup_key in &lookup_keys {
-                if !requested_entity_keys.contains_key(lookup_key.lookup.as_ref()) {
+                if !requested_entity_keys.contains_key(lookup_key.lookup) {
                     return Err(anyhow!(
                         "Missing entity key: {} for requested feature {}",
                         &lookup_key.lookup,
@@ -206,21 +206,20 @@ fn feature_views_to_keys(
 
             let cache_key = lookup_keys
                 .iter()
-                .map(|lookup_key| lookup_key.origin_col_name.clone())
-                .collect::<Vec<Arc<str>>>();
+                .map(|lookup_key| lookup_key.origin_col_name)
+                .collect::<Vec<&str>>();
             let entity_keys = match key_cache.entry(cache_key) {
                 Entry::Occupied(entry) => Arc::clone(entry.get()),
                 Entry::Vacant(entry) => {
                     let first_lookup_key = lookup_keys
                         .first()
                         .expect("lookup_keys should not be empty")
-                        .lookup
-                        .clone();
-                    let num_entities = requested_entity_keys[first_lookup_key.as_ref()].len();
+                        .lookup;
+                    let num_entities = requested_entity_keys[first_lookup_key].len();
 
                     let lookup_values_vec: Vec<_> = lookup_keys
                         .iter()
-                        .map(|lookup_key| &requested_entity_keys[lookup_key.lookup.as_ref()])
+                        .map(|lookup_key| &requested_entity_keys[lookup_key.lookup])
                         .collect();
 
                     let mut entity_keys_vec = Vec::with_capacity(num_entities);
