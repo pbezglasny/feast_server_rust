@@ -106,13 +106,10 @@ fn build_request() -> GetOnlineFeaturesRequest {
         })
         .collect();
 
-    let mut entities = HashMap::default();
-    entities.insert(
+    let entities = StdHashMap::from([(
         "driver_id".to_string(),
         RepeatedValue { val: entity_values },
-    );
-
-    let entities = entities.into_iter().collect();
+    )]);
     GetOnlineFeaturesRequest {
         kind: Some(Kind::Features(FeatureList { val: features })),
         entities,
