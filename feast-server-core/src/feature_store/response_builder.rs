@@ -391,7 +391,7 @@ mod tests {
     use crate::model::HashEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
-    use rustc_hash::{FxHashMap as HashMap, FxHashMap};
+    use rustc_hash::FxHashMap as HashMap;
     use std::sync::Arc;
 
     #[test]
