@@ -44,8 +44,8 @@ impl FeatureStore {
             request
                 .entities
                 .keys()
-                .cloned()
-                .collect::<HashSet<Arc<str>>>(),
+                .map(|key| key.as_ref())
+                .collect::<Vec<_>>(),
         );
         // feature view name to feature view
         let view_name_to_view: HashMap<&str, Arc<FeatureView>> = feature_to_view
@@ -122,10 +122,10 @@ struct LookupKey<'a> {
     value_type: value_type::Enum,
 }
 
-fn build_lookup_key_mapping(
-    feature_to_view: &HashMap<Feature, Arc<FeatureView>>,
-    entities_from_request: HashSet<Arc<str>>,
-) -> HashMap<EntityColumnRef<'_>, Arc<str>> {
+fn build_lookup_key_mapping<'a>(
+    feature_to_view: &'a HashMap<Feature, Arc<FeatureView>>,
+    entities_from_request: Vec<&str>,
+) -> HashMap<EntityColumnRef<'a>, Arc<str>> {
     let mut mapping = HashMap::with_capacity_and_hasher(feature_to_view.len(), Default::default());
 
     for (feature, view) in feature_to_view {
@@ -136,7 +136,7 @@ fn build_lookup_key_mapping(
             let lookup_name = if let Some(join_key_map) = &view.join_key_map {
                 join_key_map
                     .get(&col.name)
-                    .filter(|col_name| entities_from_request.contains(col_name.as_ref()))
+                    .filter(|col_name| entities_from_request.contains(&col_name.as_ref()))
                     .cloned()
                     .unwrap_or(col.name.clone())
             } else {
@@ -385,8 +385,8 @@ mod tests {
             &features,
             requested_entity_keys
                 .keys()
-                .cloned()
-                .collect::<HashSet<_>>(),
+                .map(|key| key.as_ref())
+                .collect::<Vec<_>>(),
         );
         let mut result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         result.sort_by_key(|f| {
@@ -452,8 +452,8 @@ mod tests {
             &features,
             requested_entity_keys
                 .keys()
-                .cloned()
-                .collect::<HashSet<_>>(),
+                .map(|key| key.as_ref())
+                .collect::<Vec<_>>(),
         );
         let result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         assert_eq!(result.len(), 1);
