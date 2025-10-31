@@ -17,8 +17,8 @@ pub use file_registry::FileFeatureRegistry;
 #[async_trait]
 pub trait FeatureRegistryService: Send + Sync {
     /// Get Feature View objects for the requested features in the request
-    async fn request_to_view_keys<'a>(
-        &'a self,
-        request: RequestedFeatures<'a>,
+    async fn request_to_view_keys(
+        &self,
+        request: RequestedFeatures,
     ) -> Result<HashMap<Feature, Arc<FeatureView>>>;
 }

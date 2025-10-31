@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use google_cloud_storage::client::{Client as GcsClient, ClientConfig};
+use lasso::ThreadedRodeo;
 use prost::Message;
 use rustc_hash::FxHashMap as HashMap;
 use std::ops::Add;
@@ -56,13 +57,17 @@ impl CachedFileRegistry {
     pub async fn new_local(
         path: PathBuf,
         cache_ttl_seconds: Option<u64>,
+        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
         let path_arc = Arc::new(path);
+        let rodeo = rodeo;
         let producer_fn = {
             let path = Arc::clone(&path_arc);
+            let rodeo_clone = rodeo.clone();
             move || {
                 let path = Arc::clone(&path);
-                async move { FileFeatureRegistry::from_path(path.as_ref()) }
+                let rodeo_clone = rodeo_clone.clone();
+                async move { FileFeatureRegistry::from_path(path.as_ref(), rodeo_clone) }
             }
         };
         Self::create_registry(producer_fn, cache_ttl_seconds).await
@@ -71,6 +76,7 @@ impl CachedFileRegistry {
     pub async fn new_s3(
         bucket_url: String,
         cache_ttl_seconds: Option<u64>,
+        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
         let (bucket, key) = parse_storage_url(&bucket_url, "s3", "S3")?;
         let bucket = Arc::new(bucket);
@@ -83,11 +89,13 @@ impl CachedFileRegistry {
             let client = Arc::clone(&client);
             let bucket = Arc::clone(&bucket);
             let key = Arc::clone(&key);
+            let rodeo = rodeo.clone();
             move || {
                 let client = Arc::clone(&client);
                 let bucket = Arc::clone(&bucket);
                 let key = Arc::clone(&key);
-                async move { from_s3(client, bucket.as_str(), key.as_str()).await }
+                let rodeo = rodeo.clone();
+                async move { from_s3(client, bucket.as_str(), key.as_str(), rodeo).await }
             }
         };
 
@@ -97,6 +105,7 @@ impl CachedFileRegistry {
     pub async fn new_gcs(
         bucket_url: String,
         cache_ttl_seconds: Option<u64>,
+        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
         let (bucket, object) = parse_storage_url(&bucket_url, "gs", "GCS")?;
         let bucket = Arc::new(bucket);
@@ -109,11 +118,13 @@ impl CachedFileRegistry {
             let client = Arc::clone(&client);
             let bucket = Arc::clone(&bucket);
             let object = Arc::clone(&object);
+            let rodeo = rodeo.clone();
             move || {
                 let client = Arc::clone(&client);
                 let bucket = Arc::clone(&bucket);
                 let object = Arc::clone(&object);
-                async move { from_gcs(client, bucket.as_str(), object.as_str()).await }
+                let rodeo = rodeo.clone();
+                async move { from_gcs(client, bucket.as_str(), object.as_str(), rodeo).await }
             }
         };
 
@@ -123,13 +134,17 @@ impl CachedFileRegistry {
     pub async fn new_sql(
         config: RegistryConfig,
         project: String,
+        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Arc<dyn FeatureRegistryService>> {
         let ttl = config.cache_ttl_seconds;
         let producer_fn = move || {
             let config = config.clone();
             let project = project.clone();
+            let rodeo = rodeo.clone();
             async move {
-                let sql_registry = crate::registry::sql_registry::new(config, project).await?;
+                let rodeo = rodeo.clone();
+                let sql_registry =
+                    crate::registry::sql_registry::new(config, project, rodeo).await?;
                 let registry = sql_registry.query_registry().await?;
                 Ok(registry)
             }
@@ -142,6 +157,7 @@ async fn from_s3(
     s3_client: Arc<aws_sdk_s3::Client>,
     bucket: &str,
     key: &str,
+    rodeo: Arc<ThreadedRodeo>,
 ) -> Result<FileFeatureRegistry> {
     let proto_file = s3_client
         .get_object()
@@ -151,13 +167,14 @@ async fn from_s3(
         .await?;
     let data = proto_file.body.collect().await?.into_bytes();
     let registry_proto = crate::feast::core::Registry::decode(&*data)?;
-    FileFeatureRegistry::from_proto(registry_proto)
+    FileFeatureRegistry::from_proto(registry_proto, rodeo)
 }
 
 async fn from_gcs(
     gcs_client: Arc<GcsClient>,
     bucket: &str,
     object: &str,
+    rodeo: Arc<ThreadedRodeo>,
 ) -> Result<FileFeatureRegistry> {
     use google_cloud_storage::http::objects::download::Range;
     use google_cloud_storage::http::objects::get::GetObjectRequest;
@@ -172,7 +189,7 @@ async fn from_gcs(
         .download_object(&request, &Range::default())
         .await?;
     let registry_proto = crate::feast::core::Registry::decode(&*data)?;
-    FileFeatureRegistry::from_proto(registry_proto)
+    FileFeatureRegistry::from_proto(registry_proto, rodeo)
 }
 
 fn parse_storage_url(url_str: &str, scheme: &str, provider_name: &str) -> Result<(String, String)> {
@@ -224,9 +241,9 @@ fn start_refresh_task<F, Fut>(
 
 #[async_trait]
 impl FeatureRegistryService for CachedFileRegistry {
-    async fn request_to_view_keys<'a>(
-        &'a self,
-        request: RequestedFeatures<'a>,
+    async fn request_to_view_keys(
+        &self,
+        request: RequestedFeatures,
     ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
         if self
             .created_at

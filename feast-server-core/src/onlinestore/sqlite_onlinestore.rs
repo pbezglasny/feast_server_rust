@@ -7,6 +7,7 @@ use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use lasso::{Spur, ThreadedRodeo};
 use prost::Message;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
@@ -44,7 +45,11 @@ pub struct SqliteStoreRow {
 }
 
 impl SqliteStoreRow {
-    fn try_into_online_store_row(self, feature_view_name: Arc<str>) -> Result<OnlineStoreRow> {
+    fn try_into_online_store_row(
+        self,
+        feature_view_name: Spur,
+        rodeo: Arc<ThreadedRodeo>,
+    ) -> Result<OnlineStoreRow> {
         let Self {
             entity_key,
             feature_name,
@@ -52,20 +57,23 @@ impl SqliteStoreRow {
             event_ts,
             created_ts,
         } = self;
+
         let decoded_value = Value::decode(value.as_slice()).with_context(|| {
             format!(
                 "Failed to decode value for feature {}:{}",
-                feature_view_name, feature_name
+                rodeo.resolve(&feature_view_name),
+                feature_name
             )
         })?;
         let entity_key =
             deserialize_key(entity_key, EntityKeySerializationVersion::V3).map_err(|e| {
                 anyhow!(
                     "Failed to deserialize entity key for feature view {}: {:?}",
-                    feature_view_name,
+                    rodeo.resolve(&feature_view_name),
                     e
                 )
             })?;
+        let feature_name = rodeo.get_or_intern(feature_name.as_ref());
         Ok(OnlineStoreRow {
             feature_view_name,
             entity_key: HashEntityKey(Arc::new(entity_key)),
@@ -97,6 +105,7 @@ impl FromRow<'_, SqliteRow> for SqliteStoreRow {
 pub struct SqliteOnlineStore {
     project: String,
     connection_pool: Pool<Sqlite>,
+    rodeo: Arc<ThreadedRodeo>,
 }
 
 #[async_trait]
@@ -105,8 +114,8 @@ impl OnlineStore for SqliteOnlineStore {
         &self,
         features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
-        let mut view_to_keys: HashMap<Arc<str>, HashSet<Vec<u8>>> = HashMap::default();
-        let mut view_features: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::default();
+        let mut view_to_keys: HashMap<Spur, HashSet<Vec<u8>>> = HashMap::default();
+        let mut view_features: HashMap<Spur, HashSet<Spur>> = HashMap::default();
 
         for (entity_key, feature_list) in features {
             let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
@@ -135,8 +144,9 @@ impl OnlineStore for SqliteOnlineStore {
             }
 
             let mut connection = self.connection_pool.acquire().await?;
-            let table_name = format!("{}_{}", self.project, view_name);
+            let table_name = format!("{}_{}", self.project, self.rodeo.resolve(&view_name));
 
+            let rodeo = self.rodeo.clone();
             join_set.spawn(async move {
                 let entity_keys_parameters =
                     format!("?{}", ", ?".repeat(serialized_keys.len() - 1));
@@ -151,12 +161,14 @@ impl OnlineStore for SqliteOnlineStore {
                     sqlx_query = sqlx_query.bind(key);
                 }
                 for feature_name in features {
-                    sqlx_query = sqlx_query.bind(feature_name.to_string());
+                    sqlx_query = sqlx_query.bind(rodeo.resolve(&feature_name));
                 }
                 match sqlx_query.fetch_all(&mut *connection).await {
                     Ok(rows) => rows
                         .into_iter()
-                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(view_name.clone()))
+                        .map(|r: SqliteStoreRow| {
+                            r.try_into_online_store_row(view_name, rodeo.clone())
+                        })
                         .collect::<Result<Vec<_>>>(),
                     Err(sqlx::Error::Database(db_err))
                         if db_err.message().contains("no such table") =>
@@ -196,6 +208,7 @@ impl SqliteOnlineStore {
         path: &str,
         project: String,
         connection_options: ConnectionOptions,
+        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Self> {
         let pool = SqlitePoolOptions::new()
             .max_connections(connection_options.max_connections)
@@ -218,6 +231,7 @@ impl SqliteOnlineStore {
         Ok(Self {
             project,
             connection_pool: pool,
+            rodeo,
         })
     }
 }

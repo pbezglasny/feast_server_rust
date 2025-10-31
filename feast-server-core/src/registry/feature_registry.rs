@@ -2,6 +2,7 @@ use crate::config::{Provider, RegistryConfig, RegistryType};
 use crate::registry::cached_registry::CachedFileRegistry;
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
+use lasso::ThreadedRodeo;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::log::info;
@@ -23,6 +24,7 @@ pub async fn get_registry(
     provider: Option<Provider>,
     project: String,
     cwd: Option<&str>,
+    rodeo: Arc<ThreadedRodeo>,
 ) -> Result<Arc<dyn FeatureRegistryService>> {
     let path_prefix = cwd.unwrap_or("");
     match &conf.registry_type {
@@ -36,7 +38,7 @@ pub async fn get_registry(
                     path_buf.display()
                 );
                 let registry =
-                    CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds).await?;
+                    CachedFileRegistry::new_local(path_buf, conf.cache_ttl_seconds, rodeo).await?;
                 Ok(registry)
             }
             Provider::AWS => {
@@ -45,7 +47,8 @@ pub async fn get_registry(
                     conf.path.as_str()
                 );
                 let registry =
-                    CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds).await?;
+                    CachedFileRegistry::new_s3(conf.path.clone(), conf.cache_ttl_seconds, rodeo)
+                        .await?;
                 Ok(registry)
             }
             Provider::GCP => {
@@ -54,14 +57,15 @@ pub async fn get_registry(
                     conf.path.as_str()
                 );
                 let registry =
-                    CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds).await?;
+                    CachedFileRegistry::new_gcs(conf.path.clone(), conf.cache_ttl_seconds, rodeo)
+                        .await?;
                 Ok(registry)
             }
             _ => Err(anyhow!("Unsupported provider for file registry")),
         },
         RegistryType::Sql => {
             info!("Using SQL feature registry");
-            let registry = CachedFileRegistry::new_sql(conf.clone(), project).await?;
+            let registry = CachedFileRegistry::new_sql(conf.clone(), project, rodeo).await?;
             Ok(registry)
         }
     }

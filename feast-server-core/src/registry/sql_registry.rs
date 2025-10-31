@@ -4,6 +4,7 @@ use crate::model::{
 };
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
+use lasso::{Spur, ThreadedRodeo};
 use rustc_hash::FxHashMap as HashMap;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -88,7 +89,11 @@ async fn new_postgres_connection(path: &str) -> Result<Pool<Postgres>> {
     pool_options = read_pool_options(pool_options)?;
     pool_options.connect_with(options).await.map_err(Into::into)
 }
-pub(crate) async fn new(config: RegistryConfig, project: String) -> Result<SqlFeatureRegistry> {
+pub(crate) async fn new(
+    config: RegistryConfig,
+    project: String,
+    rodeo: Arc<ThreadedRodeo>,
+) -> Result<SqlFeatureRegistry> {
     let registry_type = SqlRegistryType::from_str(&config.path)?;
     match registry_type {
         SqlRegistryType::Postgres => {
@@ -96,6 +101,7 @@ pub(crate) async fn new(config: RegistryConfig, project: String) -> Result<SqlFe
             let registry = SqlFeatureRegistry {
                 project,
                 connection_pool: pool,
+                rodeo,
             };
             Ok(registry)
         }
@@ -106,6 +112,7 @@ pub(crate) async fn new(config: RegistryConfig, project: String) -> Result<SqlFe
 pub(crate) struct SqlFeatureRegistry {
     project: String,
     connection_pool: Pool<Postgres>,
+    rodeo: Arc<ThreadedRodeo>,
 }
 
 impl SqlFeatureRegistry {
@@ -119,15 +126,16 @@ impl SqlFeatureRegistry {
         let mut connection = self.connection_pool.acquire().await?;
 
         async fn query_table<'a, T>(
+            rodeo: Arc<ThreadedRodeo>,
             conn: &'a mut sqlx::PgConnection,
             project: &'a str,
             table_name: &'a str,
             name_col: &'a str,
             proto_col: &'a str,
             type_name: &'a str,
-        ) -> Result<HashMap<String, T>>
+        ) -> Result<HashMap<Spur, T>>
         where
-            T: TryFrom<Vec<u8>, Error = anyhow::Error>,
+            T: TryFrom<(Arc<ThreadedRodeo>, Vec<u8>), Error = anyhow::Error>,
         {
             let query_str = format!(
                 "SELECT {}, {} FROM {} WHERE project_id=$1",
@@ -140,7 +148,7 @@ impl SqlFeatureRegistry {
 
             rows.into_iter()
                 .map(|(name, proto)| {
-                    T::try_from(proto)
+                    T::try_from((rodeo.clone(), proto))
                         .map_err(|e| {
                             anyhow!(
                                 "Failed to convert {} proto for '{}': {}",
@@ -149,12 +157,13 @@ impl SqlFeatureRegistry {
                                 e
                             )
                         })
-                        .map(|item| (name, item))
+                        .map(|item| (rodeo.get_or_intern(name), item))
                 })
                 .collect::<Result<HashMap<_, _>>>()
         }
 
         let entities = query_table::<Entity>(
+            self.rodeo.clone(),
             &mut connection,
             &self.project,
             "entities",
@@ -165,6 +174,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let feature_views = query_table::<FeatureView>(
+            self.rodeo.clone(),
             &mut connection,
             &self.project,
             "feature_views",
@@ -175,6 +185,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let on_demand_feature_views = query_table::<crate::model::OnDemandFeatureView>(
+            self.rodeo.clone(),
             &mut connection,
             &self.project,
             "on_demand_feature_views",
@@ -185,6 +196,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let feature_services = query_table::<FeatureService>(
+            self.rodeo.clone(),
             &mut connection,
             &self.project,
             "feature_services",
@@ -194,12 +206,15 @@ impl SqlFeatureRegistry {
         )
         .await?;
 
-        Ok(FileFeatureRegistry::from_registry(FeatureRegistry::new(
-            entities,
-            feature_views,
-            on_demand_feature_views,
-            feature_services,
-        )))
+        Ok(FileFeatureRegistry::from_registry(
+            FeatureRegistry::new(
+                entities,
+                feature_views,
+                on_demand_feature_views,
+                feature_services,
+            ),
+            self.rodeo.clone(),
+        ))
     }
 }
 
