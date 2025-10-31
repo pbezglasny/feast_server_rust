@@ -8,8 +8,8 @@ use crate::model::{
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
-use rustc_hash::FxHashMap as HashMap;
-use std::collections::{HashSet, hash_map::Entry};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use tracing;
 

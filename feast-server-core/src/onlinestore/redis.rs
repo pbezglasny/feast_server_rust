@@ -20,15 +20,19 @@ use redis::{
 };
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rustls::crypto::CryptoProvider;
+use smallvec::SmallVec;
 use std::hash::Hash;
 use std::sync::Arc;
 
 fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
-    let mut key_bytes = feature.feature_view_name.as_bytes().to_vec();
+    let mut key_bytes: SmallVec<[u8; 64]> =
+        SmallVec::with_capacity(feature.feature_view_name.len() + 1 + feature.feature_name.len());
+    key_bytes.extend_from_slice(feature.feature_view_name.as_bytes());
     key_bytes.push(b':');
     key_bytes.extend_from_slice(feature.feature_name.as_bytes());
-    let hashed_key = murmur3::murmur3_32(&mut std::io::Cursor::new(&key_bytes), 0)?;
-    Ok(hashed_key.to_le_bytes().to_vec())
+    let mut reader = std::io::Cursor::new(&key_bytes[..]);
+    let hashed_key = murmur3::murmur3_32(&mut reader, 0)?;
+    Ok(Vec::from(hashed_key.to_le_bytes()))
 }
 
 fn parse_redis_connection_string(connection_string: &str) -> Result<RedisConnectionOption> {

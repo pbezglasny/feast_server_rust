@@ -29,6 +29,7 @@ sqlx = { version = "=0.8.6", features = ["sqlite", "postgres", "chrono", "runtim
 redis = { version = "0.32.6", features = ["default", "tokio-comp", "safe_iterators", "connection-manager", "cluster-async", "tls-rustls", "tokio-rustls-comp", "sentinel"] }
 murmur3 = { version = "0.5.2" }
 rustc-hash = { workspace = true }
+smallvec = "1.13.2"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_tokio"] }
