@@ -122,10 +122,10 @@ struct LookupKey {
     value_type: value_type::Enum,
 }
 
-fn build_lookup_key_mapping<'a>(
-    feature_to_view: &'a HashMap<Feature, Arc<FeatureView>>,
+fn build_lookup_key_mapping(
+    feature_to_view: &HashMap<Feature, Arc<FeatureView>>,
     entities_from_request: HashSet<Arc<str>>,
-) -> HashMap<EntityColumnRef<'a>, Arc<str>> {
+) -> HashMap<EntityColumnRef<'_>, Arc<str>> {
     let mut mapping = HashMap::with_capacity_and_hasher(feature_to_view.len(), Default::default());
 
     for (feature, view) in feature_to_view {
