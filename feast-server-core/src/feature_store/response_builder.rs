@@ -428,8 +428,7 @@ mod tests {
 
         let mut feature_views = HashMap::default();
         let feature = Arc::from(feature_view);
-        let feature_name = feature.name.to_string();
-        feature_views.insert(feature_name.as_ref(), feature);
+        feature_views.insert("driver_hourly_stats", feature);
 
         let features: HashSet<Feature> = vec![Feature::new("driver_hourly_stats", "acc_rate")]
             .into_iter()
