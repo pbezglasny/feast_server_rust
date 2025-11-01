@@ -140,13 +140,7 @@ impl GetOnlineFeatureResponseBuilder {
         });
     }
 
-    fn ensure_feature_slot(
-        &mut self,
-        feature: &Feature,
-        value_count: usize,
-        is_entity_less: bool,
-        is_missing: bool,
-    ) -> usize {
+    fn ensure_feature_slot(&mut self, feature: &Feature, value_count: usize) -> usize {
         if let Some(&idx) = self.feature_to_idx.get(feature) {
             return idx;
         }
@@ -337,8 +331,7 @@ impl GetOnlineFeatureResponse {
                     .get(position.entity_idx)
                     .copied()
                     .unwrap_or(0);
-                let feature_idx =
-                    response_builder.ensure_feature_slot(&feature, value_count, false, false);
+                let feature_idx = response_builder.ensure_feature_slot(&feature, value_count);
                 response_builder.set_feature_value(
                     feature_idx,
                     position.value_idx,

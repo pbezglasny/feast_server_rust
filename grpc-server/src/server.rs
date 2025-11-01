@@ -78,12 +78,7 @@ impl FeastGrpcService {
     ) -> Result<GetOnlineFeaturesResponse, GrpcStatus> {
         let metadata = Some(GetOnlineFeaturesResponseMetadata {
             feature_names: Some(FeatureList {
-                val: response
-                    .metadata
-                    .feature_names
-                    .iter()
-                    .map(|x| x.to_string())
-                    .collect(),
+                val: response.metadata.feature_names,
             }),
         });
 
