@@ -511,7 +511,7 @@ where
                 if !seen_views.contains(&view_name) {
                     seen_views.insert(view_name);
                     let view_name_str = rodeo.resolve(&view_name);
-                    feature_keys.push(["_ts:", view_name_str].concat().as_bytes().to_vec());
+feature_keys.push([b"_ts:", view_name_str.as_bytes()].concat());
                     entities.push(RedisRequest::TimestampRow {
                         entity_key: key,
                         feature_view_name: view_name,
