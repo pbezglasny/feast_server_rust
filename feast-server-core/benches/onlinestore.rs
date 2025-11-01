@@ -1,23 +1,24 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use rustc_hash::FxHashMap as HashMap;
-use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 #[path = "common.rs"]
 mod common;
 
 use common::online_store;
-use feast_server_core::feast::types::value::Val;
-use feast_server_core::feast::types::{EntityKey, Value};
-use feast_server_core::model::{Feature, HashEntityKey};
+use feast_server_core::feast::types::value_type::Enum::Int64;
+use feast_server_core::intern::rodeo_ref;
+use feast_server_core::model::EntityIdValue::Int;
+use feast_server_core::model::{RequestedEntityKey, Feature, JoinKeyValue};
 
-fn build_entity_keys() -> Vec<EntityKey> {
+fn build_entity_keys() -> Vec<RequestedEntityKey> {
     [1005_i64, 1002, 2003]
         .into_iter()
-        .map(|driver_id| EntityKey {
-            join_keys: vec!["driver_id".to_string()],
-            entity_values: vec![Value {
-                val: Some(Val::Int64Val(driver_id)),
+        .map(|driver_id| RequestedEntityKey {
+            join_keys: vec![JoinKeyValue {
+                join_key: rodeo_ref().get_or_intern("driver_id"),
+                value: Int(driver_id),
+                value_type: Int64,
             }],
         })
         .collect()
@@ -31,11 +32,11 @@ fn bench_onlinestore(c: &mut Criterion) {
     let entity_keys = build_entity_keys();
     let feature_names = vec!["conv_rate", "acc_rate"];
 
-    let arg: HashMap<HashEntityKey, Vec<Feature>> = entity_keys
+    let arg: HashMap<RequestedEntityKey, Vec<Feature>> = entity_keys
         .into_iter()
         .map(|key| {
             (
-                HashEntityKey(Arc::new(key)),
+                key,
                 feature_names
                     .iter()
                     .map(|feature| Feature::from_names("driver_hourly_stats", feature))

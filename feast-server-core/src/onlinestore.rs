@@ -6,9 +6,9 @@ pub mod sqlite_onlinestore;
 
 use crate::config::OnlineStoreConfig;
 use crate::feast::types::{EntityKey, Value};
-use crate::model::{Feature, HashEntityKey};
+use crate::model::{RequestedEntityKey, Feature};
 use crate::onlinestore::sqlite_onlinestore::{ConnectionOptions, SqliteOnlineStore};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use lasso::Spur;
@@ -19,7 +19,7 @@ use tracing::debug;
 #[derive(Debug)]
 pub struct OnlineStoreRow {
     pub feature_view_name: Spur,
-    pub entity_key: HashEntityKey,
+    pub entity_key: RequestedEntityKey,
     pub feature_name: Spur,
     pub value: Value,
     pub event_ts: DateTime<Utc>,
@@ -30,7 +30,7 @@ pub struct OnlineStoreRow {
 pub trait OnlineStore: Send + Sync + 'static {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Feature>>,
+        features: HashMap<RequestedEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>>;
 }
 
