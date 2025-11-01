@@ -8,7 +8,7 @@ use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
 use crate::feast::types::{EntityKey, Value, value_type};
-use crate::intern::rodeo;
+use crate::intern::{rodeo, rodeo_ref};
 use crate::util::prost_duration_to_duration;
 use crate::util::prost_timestamp_to_datetime;
 use anyhow::{Context, Result};
@@ -263,7 +263,6 @@ pub struct FeatureService {
     pub logging_config: Option<LoggingConfig>,
 }
 
-// todo make fields private and add getters
 #[derive(Debug, Clone, Default)]
 pub struct FeatureRegistry {
     pub entities: HashMap<Spur, Entity>,
@@ -405,23 +404,66 @@ impl<'a> Hash for HashValue<'a> {
     }
 }
 
-/// Wrapper struct to implement custom hashing for EntityKey
-/// Used as key in HashMap for result from online store
-#[derive(Debug, Clone, PartialEq)]
-pub struct HashEntityKey(pub Arc<EntityKey>);
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct JoinKeyValue {
+    pub join_key: Spur,
+    pub value: EntityIdValue,
+    pub value_type: value_type::Enum,
+}
 
-impl Hash for HashEntityKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for join_key in &self.0.join_keys {
-            join_key.hash(state);
-        }
-        for entity_value in &self.0.entity_values {
-            HashValue(entity_value).hash(state);
-        }
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct RequestedEntityKey {
+    pub join_keys: Vec<JoinKeyValue>,
+}
+
+impl TryFrom<EntityKey> for RequestedEntityKey {
+    type Error = Error;
+    fn try_from(value: EntityKey) -> Result<Self> {
+        let EntityKey {
+            join_keys,
+            entity_values,
+        } = value;
+        let join_keys: Result<Vec<JoinKeyValue>> = join_keys
+            .into_iter()
+            .zip(entity_values)
+            .map(|(join_key, value)| {
+                let (entity_id_value, value_type) = match value.val {
+                    Some(Val::Int64Val(v)) => (EntityIdValue::Int(v), value_type::Enum::Int64),
+                    Some(Val::Int32Val(v)) => {
+                        (EntityIdValue::Int(v.into()), value_type::Enum::Int32)
+                    }
+                    Some(Val::StringVal(v)) => (EntityIdValue::String(v), value_type::Enum::String),
+                    None => return Err(anyhow!("Empty value ")),
+                    _ => return Err(anyhow!("invalid value type")),
+                };
+                Ok(JoinKeyValue {
+                    join_key: rodeo_ref().get_or_intern(&join_key),
+                    value: entity_id_value,
+                    value_type,
+                })
+            })
+            .collect();
+        Ok(Self {
+            join_keys: join_keys?,
+        })
     }
 }
 
-impl Eq for HashEntityKey {}
+impl TryFrom<&RequestedEntityKey> for EntityKey {
+    type Error = Error;
+    fn try_from(value: &RequestedEntityKey) -> Result<Self> {
+        let mut join_keys = Vec::with_capacity(value.join_keys.len());
+        let mut entity_values = Vec::with_capacity(value.join_keys.len());
+        for join_key in &value.join_keys {
+            join_keys.push(rodeo_ref().resolve(&join_key.join_key).to_string());
+            entity_values.push(join_key.value.to_proto_value(join_key.value_type)?);
+        }
+        Ok(Self {
+            join_keys,
+            entity_values,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Feature {
@@ -431,7 +473,7 @@ pub struct Feature {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FeatureType {
-    Plain,
+    Base,
     EntityLess,
 }
 
