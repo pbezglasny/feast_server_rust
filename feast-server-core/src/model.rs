@@ -446,7 +446,7 @@ impl Feature {
     pub fn entity_feature(feature_name: Spur) -> Self {
         Self {
             feature_view_name: rodeo().get_or_intern(""),
-            feature_name: feature_name.into(),
+            feature_name,
         }
     }
 
