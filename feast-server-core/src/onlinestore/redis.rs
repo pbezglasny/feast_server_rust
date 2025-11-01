@@ -1,7 +1,7 @@
 use crate::config::{OnlineStoreConfig, RedisType};
-use crate::feast::types::Value as FeastValue;
+use crate::feast::types::{EntityKey, Value as FeastValue};
 use crate::intern;
-use crate::model::{Feature, HashEntityKey};
+use crate::model::{RequestedEntityKey, Feature};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -13,12 +13,10 @@ use redis::aio::{ConnectionLike, ConnectionManager, MultiplexedConnection};
 use redis::cluster::{ClusterClient, ClusterClientBuilder};
 use redis::cluster_async::ClusterConnection;
 use redis::sentinel::SentinelServerType::Master;
-use redis::sentinel::{
-    Sentinel, SentinelClient, SentinelClientBuilder, SentinelNodeConnectionInfo, SentinelServerType,
-};
+use redis::sentinel::{SentinelClient, SentinelClientBuilder};
 use redis::{
     AsyncCommands, Client, ClientTlsConfig, Commands, ConnectionAddr, ConnectionInfo,
-    FromRedisValue, IntoConnectionInfo, RedisConnectionInfo, RedisResult, TlsCertificates, TlsMode,
+    FromRedisValue, IntoConnectionInfo, RedisConnectionInfo, RedisResult, TlsCertificates,
 };
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rustls::crypto::CryptoProvider;
@@ -472,11 +470,11 @@ pub async fn from_config(
 enum RedisRequest<'a> {
     FeatureRow {
         feature_view_name: Spur,
-        entity_key: &'a HashEntityKey,
+        entity_key: &'a RequestedEntityKey,
         feature_name: Spur,
     },
     TimestampRow {
-        entity_key: &'a HashEntityKey,
+        entity_key: &'a RequestedEntityKey,
         feature_view_name: Spur,
     },
 }
@@ -489,7 +487,7 @@ where
 {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Feature>>,
+        features: HashMap<RequestedEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut entities: Vec<RedisRequest> = vec![];
 
@@ -501,7 +499,7 @@ where
             let mut seen_views: HashSet<Spur> = HashSet::default();
             let mut feature_keys: Vec<Vec<u8>> = vec![];
             let mut hset_entity_key = crate::key_serialization::serialize_key(
-                &key.0,
+                &EntityKey::try_from(key)?,
                 crate::config::EntityKeySerializationVersion::V3,
             )?;
             hset_entity_key.extend_from_slice(project_name.as_bytes());
@@ -511,7 +509,7 @@ where
                 if !seen_views.contains(&view_name) {
                     seen_views.insert(view_name);
                     let view_name_str = rodeo.resolve(&view_name);
-feature_keys.push([b"_ts:", view_name_str.as_bytes()].concat());
+                    feature_keys.push([b"_ts:", view_name_str.as_bytes()].concat());
                     entities.push(RedisRequest::TimestampRow {
                         entity_key: key,
                         feature_view_name: view_name,
@@ -540,7 +538,7 @@ feature_keys.push([b"_ts:", view_name_str.as_bytes()].concat());
             ));
         }
         let mut result_rows: Vec<OnlineStoreRow> = vec![];
-        let mut timestamp_map: HashMap<(Spur, &HashEntityKey), Option<DateTime<Utc>>> =
+        let mut timestamp_map: HashMap<(Spur, &RequestedEntityKey), Option<DateTime<Utc>>> =
             HashMap::default();
         for (request, value) in entities.into_iter().zip(results.into_iter().flatten()) {
             match request {
@@ -606,14 +604,13 @@ feature_keys.push([b"_ts:", view_name_str.as_bytes()].concat());
 #[cfg(test)]
 mod tests {
     use super::new;
-    use crate::feast::types::value::Val;
-    use crate::feast::types::{EntityKey, Value};
-    use crate::model::{Feature, HashEntityKey};
+    use crate::feast::types::value_type::Enum::Int64;
+    use crate::intern::rodeo_ref;
+    use crate::model::{EntityIdValue, RequestedEntityKey, Feature, JoinKeyValue};
     use crate::onlinestore::OnlineStore;
     use anyhow::Result;
     use redis::aio::ConnectionManager;
     use rustc_hash::FxHashMap as HashMap;
-    use std::sync::Arc;
 
     impl super::RedisSingleNodeOnlineStore {
         async fn new_from_manager(
@@ -636,12 +633,13 @@ mod tests {
             super::RedisSingleNodeOnlineStore::new_from_manager("careful_tomcat".to_string(), con)
                 .await?;
         let arg = HashMap::from_iter([(
-            HashEntityKey(Arc::new(EntityKey {
-                join_keys: vec!["driver_id".to_string()],
-                entity_values: vec![Value {
-                    val: Some(Val::Int64Val(1005)),
+            RequestedEntityKey {
+                join_keys: vec![JoinKeyValue {
+                    join_key: rodeo_ref().get_or_intern("driver_id"),
+                    value: EntityIdValue::Int(1005),
+                    value_type: Int64,
                 }],
-            })),
+            },
             vec![
                 Feature::from_names("driver_hourly_stats", "conv_rate"),
                 Feature::from_names("driver_hourly_stats", "acc_rate"),

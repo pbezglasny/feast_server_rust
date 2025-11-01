@@ -5,7 +5,7 @@ use crate::intern;
 use crate::model::FeatureStatus::Present;
 use crate::model::{
     DUMMY_ENTITY_ID, EntityIdValue, Feature, FeatureResults, FeatureStatus, FeatureType,
-    FeatureView, GetOnlineFeatureResponse, ValueWrapper,
+    FeatureView, GetOnlineFeatureResponse, JoinKeyValue, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
@@ -295,39 +295,36 @@ impl GetOnlineFeatureResponse {
         for row in rows {
             let OnlineStoreRow {
                 feature_view_name,
-                entity_key,
+                mut entity_key,
                 feature_name,
                 value,
                 event_ts,
                 created_ts: _,
             } = row;
-
-            if entity_key.0.join_keys.len() != 1 || entity_key.0.entity_values.len() != 1 {
+            let feature_value = value;
+            if entity_key.join_keys.len() != 1 {
                 return Err(anyhow!(
                     "Invalid entity key with multiple join keys or entity values"
                 ));
             }
 
-            let entity_key_name = &entity_key.0.join_keys[0];
-            let entity_col_ref =
-                EntityColumnRef::new(feature_view_name, rodeo.get_or_intern(entity_key_name));
+            let JoinKeyValue {
+                join_key,
+                value,
+                value_type,
+            } = entity_key.join_keys.pop().ok_or_else(|| anyhow!(""))?;
+            let entity_col_ref = EntityColumnRef::new(feature_view_name, join_key);
             let lookup_key = lookup_mapping
                 .get(&entity_col_ref)
                 .expect("programming error: lookup_mapping should contain all entity columns");
-            let entity_id_value = entity_key.0.entity_values[0]
-                .val
-                .as_ref()
-                .map(val_to_entity_id_value)
-                .transpose()?
-                .ok_or(anyhow!("Empty entity id value"))?;
             let request_key = RequestEntityIdKey {
                 name: *lookup_key,
-                value: entity_id_value.clone(),
+                value: value.clone(),
             };
 
             let feature = Feature::new(entity_col_ref.view_name, feature_name);
             let status = get_feature_status(
-                &value,
+                &feature_value,
                 feature_views.get(&entity_col_ref.view_name).cloned(),
                 &event_ts,
             );
@@ -343,14 +340,14 @@ impl GetOnlineFeatureResponse {
                 response_builder.set_feature_value(
                     feature_idx,
                     position.value_idx,
-                    value,
+                    feature_value,
                     status,
                     event_ts,
                 );
                 feature_set.remove(&feature);
             } else if *lookup_key == *DUMMY_ENTITY_ID_SPUR {
                 feature_set.remove(&feature);
-                response_builder.add_entity_less_feature(feature, value, status, event_ts);
+                response_builder.add_entity_less_feature(feature, feature_value, status, event_ts);
             } else {
                 // Row does not correspond to requested entity keys; ignore it.
             }
@@ -386,9 +383,10 @@ impl GetOnlineFeatureResponse {
 mod tests {
     use super::*;
     use crate::feast::types::value::Val;
+    use crate::feast::types::value_type::Enum::Int64;
     use crate::feast::types::{EntityKey, Value};
     use crate::intern::rodeo;
-    use crate::model::HashEntityKey;
+    use crate::model::RequestedEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
     use lasso::Interner;
@@ -407,15 +405,16 @@ mod tests {
         let feature_value = Value {
             val: Some(Val::Int64Val(42)),
         };
-        let entity_key = Arc::new(EntityKey {
-            join_keys: vec!["driver_id".to_string()],
-            entity_values: vec![Value {
-                val: Some(Val::Int64Val(1001)),
+        let entity_key = RequestedEntityKey {
+            join_keys: vec![JoinKeyValue {
+                join_key: rodeo().get_or_intern("driver_id"),
+                value: EntityIdValue::Int(1001),
+                value_type: Int64,
             }],
-        });
+        };
         let row = OnlineStoreRow {
             feature_view_name: rodeo().get_or_intern("driver_hourly_stats"),
-            entity_key: HashEntityKey(entity_key),
+            entity_key,
             feature_name: rodeo().get_or_intern("acc_rate"),
             value: feature_value.clone(),
             event_ts,

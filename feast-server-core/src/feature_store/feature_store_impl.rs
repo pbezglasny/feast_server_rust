@@ -1,10 +1,12 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
 use crate::intern;
+use crate::intern::rodeo_ref;
 use crate::model;
 use crate::model::{
-    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
-    GetOnlineFeatureResponse, GetOnlineFeaturesRequest, HashEntityKey, RequestedFeatures,
+    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, RequestedEntityKey, Feature, FeatureType,
+    FeatureView, GetOnlineFeatureResponse, GetOnlineFeaturesRequest, JoinKeyValue,
+    RequestedFeatures,
 };
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
@@ -64,12 +66,12 @@ impl FeatureStore {
         let features_with_keys: Vec<FeatureWithKeys> =
             feature_views_to_keys(&feature_to_view, &entities, &lookup_mapping)?;
 
-        let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::default();
+        let mut features: HashMap<RequestedEntityKey, Vec<Feature>> = HashMap::default();
 
         for feature in features_with_keys.iter() {
             for entity_key in feature.entity_keys.iter() {
                 features
-                    .entry(HashEntityKey(entity_key.clone()))
+                    .entry(entity_key.clone())
                     .or_default()
                     .push(feature.feature.clone());
             }
@@ -97,7 +99,7 @@ impl FeatureStore {
 pub struct FeatureWithKeys {
     pub feature: Feature,
     pub feature_type: FeatureType,
-    pub entity_keys: Arc<Vec<Arc<EntityKey>>>,
+    pub entity_keys: Arc<Vec<RequestedEntityKey>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -115,14 +117,15 @@ impl EntityColumnRef {
     }
 }
 
-static ENTITY_LESS_FEATURE_KEY: std::sync::LazyLock<Arc<Vec<Arc<EntityKey>>>> =
+static ENTITY_LESS_FEATURE_KEY: std::sync::LazyLock<Arc<Vec<RequestedEntityKey>>> =
     std::sync::LazyLock::new(|| {
-        Arc::new(vec![Arc::new(EntityKey {
-            join_keys: vec![DUMMY_ENTITY_ID.to_string()],
-            entity_values: vec![Value {
-                val: Some(Val::StringVal(DUMMY_ENTITY_VAL.to_string())),
+        Arc::new(vec![RequestedEntityKey {
+            join_keys: vec![JoinKeyValue {
+                join_key: rodeo_ref().get_or_intern(DUMMY_ENTITY_ID),
+                value: EntityIdValue::String(DUMMY_ENTITY_VAL.to_string()),
+                value_type: value_type::Enum::String,
             }],
-        })])
+        }])
     });
 
 struct LookupKey {
@@ -167,7 +170,7 @@ fn feature_views_to_keys(
     lookup_mapping: &HashMap<EntityColumnRef, Spur>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
-    let mut key_cache: HashMap<Vec<Spur>, Arc<Vec<Arc<EntityKey>>>> = HashMap::default();
+    let mut key_cache: HashMap<Vec<Spur>, Arc<Vec<RequestedEntityKey>>> = HashMap::default();
     let rodeo = intern::rodeo_ref();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
@@ -234,31 +237,29 @@ fn feature_views_to_keys(
 
                     let mut entity_keys_vec = Vec::with_capacity(num_entities);
                     for i in 0..num_entities {
-                        let entity_values = lookup_keys
+                        let join_key_vals = lookup_keys
                             .iter()
                             .zip(lookup_values_vec.iter())
                             .map(|(lookup_key, values)| {
-                                values[i].clone().to_proto_value(lookup_key.value_type)
+                                JoinKeyValue {
+                                    join_key: lookup_key.origin_col_name,
+                                    //
+                                    value: values[i].clone(),
+                                    value_type: lookup_key.value_type,
+                                }
                             })
-                            .collect::<Result<Vec<Value>>>()?;
-                        let join_keys = lookup_keys
-                            .iter()
-                            // TODO optimize: replace with pre-resolved strings
-                            .map(|lookup_key| {
-                                rodeo.resolve(&lookup_key.origin_col_name).to_string()
-                            })
-                            .collect();
-                        entity_keys_vec.push(Arc::new(EntityKey {
-                            join_keys,
-                            entity_values,
-                        }));
+                            .collect::<Vec<JoinKeyValue>>();
+                        let entity_key_spur = RequestedEntityKey {
+                            join_keys: join_key_vals,
+                        };
+                        entity_keys_vec.push(entity_key_spur);
                     }
                     Arc::clone(entry.insert(Arc::new(entity_keys_vec)))
                 }
             };
             result.push(FeatureWithKeys {
                 feature: feature.clone(),
-                feature_type: FeatureType::Plain,
+                feature_type: FeatureType::Base,
                 entity_keys,
             });
         }
@@ -269,6 +270,7 @@ fn feature_views_to_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feast::types::value_type::Enum::{Int32, Int64};
     use crate::feast::types::{value, value_type};
     use crate::intern::rodeo;
     use crate::model::{EntityIdValue, Field, GetOnlineFeaturesRequest};
@@ -277,14 +279,12 @@ mod tests {
     use std::sync::Arc;
 
     trait ToValue {
-        fn to_values(&self) -> Vec<Value>;
+        fn to_values(&self) -> Vec<EntityIdValue>;
     }
 
     impl ToValue for i32 {
-        fn to_values(&self) -> Vec<Value> {
-            vec![Value {
-                val: Some(value::Val::Int32Val(*self)),
-            }]
+        fn to_values(&self) -> Vec<EntityIdValue> {
+            vec![EntityIdValue::Int(i64::from(*self))]
         }
     }
 
@@ -292,7 +292,7 @@ mod tests {
     where
         T: ToValue,
     {
-        fn to_values(&self) -> Vec<Value> {
+        fn to_values(&self) -> Vec<EntityIdValue> {
             let (first, second) = self;
             vec![first.to_values()[0].clone(), second.to_values()[0].clone()]
         }
@@ -301,14 +301,21 @@ mod tests {
     fn build_entity_keys<T: ToValue>(
         join_keys: &[&str],
         entity_values: &[T],
-    ) -> Vec<Arc<EntityKey>> {
+    ) -> Vec<RequestedEntityKey> {
         entity_values
             .iter()
-            .map(|v| {
-                Arc::new(EntityKey {
-                    join_keys: join_keys.iter().map(|s| s.to_string()).collect(),
-                    entity_values: v.to_values(),
-                })
+            .map(|values| {
+                let join_keys = values
+                    .to_values()
+                    .iter()
+                    .zip(join_keys)
+                    .map(|(val, join_key)| JoinKeyValue {
+                        join_key: rodeo_ref().get_or_intern(join_key),
+                        value: val.clone(),
+                        value_type: Int32,
+                    })
+                    .collect::<Vec<_>>();
+                RequestedEntityKey { join_keys }
             })
             .collect()
     }
@@ -319,7 +326,7 @@ mod tests {
             vec![],
             Duration::seconds(1),
             vec![rodeo().get_or_intern("entity_1")],
-            vec![Field::new("entity_col_1", value_type::Enum::Int32)],
+            vec![Field::new("entity_col_1", Int32)],
             None,
         );
         let feature_view_2 = FeatureView::new(
@@ -331,8 +338,8 @@ mod tests {
                 rodeo().get_or_intern("entity_2"),
             ],
             vec![
-                Field::new("entity_col_1", value_type::Enum::Int32),
-                Field::new("entity_col_2", value_type::Enum::Int32),
+                Field::new("entity_col_1", Int32),
+                Field::new("entity_col_2", Int32),
             ],
             None,
         );
@@ -392,12 +399,7 @@ mod tests {
         let lookup_mapping =
             build_lookup_key_mapping(&features, requested_entity_keys.keys().collect::<Vec<_>>());
         let mut result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
-        result.sort_by_key(|f| {
-            (
-                f.feature.feature_view_name.clone(),
-                f.feature.feature_name.clone(),
-            )
-        });
+        result.sort_by_key(|f| (f.feature.feature_view_name, f.feature.feature_name));
         assert_eq!(result.len(), 2);
         let feature_1 = Feature::from_names("feature_view1", "col1");
         let feature_2 = Feature::from_names("feature_view2", "col2");
@@ -411,22 +413,17 @@ mod tests {
         let mut expected = vec![
             FeatureWithKeys {
                 feature: feature_1,
-                feature_type: FeatureType::Plain,
+                feature_type: FeatureType::Base,
                 entity_keys: Arc::new(entity_values_1),
             },
             FeatureWithKeys {
                 feature: feature_2,
-                feature_type: FeatureType::Plain,
+                feature_type: FeatureType::Base,
                 entity_keys: Arc::new(entity_values_2),
             },
         ];
 
-        expected.sort_by_key(|f| {
-            (
-                f.feature.feature_view_name.clone(),
-                f.feature.feature_name.clone(),
-            )
-        });
+        expected.sort_by_key(|f| (f.feature.feature_view_name, f.feature.feature_name));
         assert_eq!(result, expected);
         Ok(())
     }
@@ -461,7 +458,7 @@ mod tests {
 
         let expected = vec![FeatureWithKeys {
             feature: feature_1,
-            feature_type: FeatureType::Plain,
+            feature_type: FeatureType::Base,
             entity_keys: Arc::new(entity_values_1),
         }];
         assert_eq!(result, expected);

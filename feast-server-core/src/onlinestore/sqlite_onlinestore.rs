@@ -3,7 +3,7 @@ use crate::feast::types::{EntityKey, Value};
 use crate::intern;
 use crate::key_serialization::deserialize_key;
 use crate::key_serialization::serialize_key;
-use crate::model::{Feature, HashEntityKey};
+use crate::model::{RequestedEntityKey, Feature};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -74,7 +74,7 @@ impl SqliteStoreRow {
         let feature_name = rodeo.get_or_intern(feature_name.as_ref());
         Ok(OnlineStoreRow {
             feature_view_name,
-            entity_key: HashEntityKey(Arc::new(entity_key)),
+            entity_key: RequestedEntityKey::try_from(entity_key)?,
             feature_name,
             value: decoded_value,
             event_ts,
@@ -109,13 +109,16 @@ pub struct SqliteOnlineStore {
 impl OnlineStore for SqliteOnlineStore {
     async fn get_feature_values(
         &self,
-        features: HashMap<HashEntityKey, Vec<Feature>>,
+        features: HashMap<RequestedEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut view_to_keys: HashMap<Spur, HashSet<Vec<u8>>> = HashMap::default();
         let mut view_features: HashMap<Spur, HashSet<Spur>> = HashMap::default();
 
         for (entity_key, feature_list) in features {
-            let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
+            let serialized_key = serialize_key(
+                &EntityKey::try_from(&entity_key)?,
+                EntityKeySerializationVersion::V3,
+            )?;
             for feature in feature_list {
                 let Feature {
                     feature_view_name,
@@ -234,21 +237,24 @@ mod test {
     use super::*;
     use crate::feast::types::Value;
     use crate::feast::types::value::Val;
+    use crate::feast::types::value_type::Enum::Int64;
+    use crate::intern::rodeo_ref;
+    use crate::model::EntityIdValue::Int;
+    use crate::model::JoinKeyValue;
 
     #[tokio::test]
     async fn read_sqlite_trait() -> Result<()> {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
 
-        let entity_key = Arc::new(EntityKey {
-            join_keys: vec!["driver_id".to_string()],
-            entity_values: vec![Value {
-                val: Some(Val::Int64Val(1005)),
-            }],
-        });
-
-        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from_iter([(
-            HashEntityKey(entity_key),
+        let arg: HashMap<RequestedEntityKey, Vec<Feature>> = HashMap::from_iter([(
+            RequestedEntityKey {
+                join_keys: vec![JoinKeyValue {
+                    join_key: rodeo_ref().get_or_intern("driver_id"),
+                    value: Int(1005),
+                    value_type: Int64,
+                }],
+            },
             vec![Feature::from_names("driver_hourly_stats", "conv_rate")],
         )]);
 
