@@ -132,6 +132,14 @@ impl GetOnlineFeatureResponseBuilder {
             .push(DateTime::<Utc>::UNIX_EPOCH.round_subsecs(0));
     }
 
+    fn push_empty_values(&mut self, value_count: usize) {
+        self.results.push(FeatureResults {
+            values: vec![ValueWrapper(Value { val: None }); value_count],
+            statuses: vec![FeatureStatus::NotFound; value_count],
+            event_timestamps: vec![DateTime::<Utc>::UNIX_EPOCH; value_count],
+        });
+    }
+
     fn ensure_feature_slot(
         &mut self,
         feature: &Feature,
@@ -142,14 +150,10 @@ impl GetOnlineFeatureResponseBuilder {
         if let Some(&idx) = self.feature_to_idx.get(feature) {
             return idx;
         }
-        let feature_name = self.format_feature_name(feature, is_entity_less, is_missing);
+        let feature_name = self.format_feature_name(feature);
         let idx = self.features.len();
         self.features.push(feature_name);
-        self.results.push(FeatureResults {
-            values: vec![ValueWrapper(Value { val: None }); value_count],
-            statuses: vec![FeatureStatus::NotFound; value_count],
-            event_timestamps: vec![DateTime::<Utc>::UNIX_EPOCH; value_count],
-        });
+        self.push_empty_values(value_count);
         self.feature_to_idx.insert(feature.clone(), idx);
         idx
     }
@@ -178,8 +182,7 @@ impl GetOnlineFeatureResponseBuilder {
         status: FeatureStatus,
         event_ts: DateTime<Utc>,
     ) {
-        let feature_name = self.format_feature_name(&feature, true, false);
-        self.features.push(feature_name);
+        self.features.push(feature.feature_name);
         self.results.push(FeatureResults {
             values: vec![ValueWrapper(value); self.num_values],
             statuses: vec![status; self.num_values],
@@ -188,21 +191,12 @@ impl GetOnlineFeatureResponseBuilder {
     }
 
     fn add_missing_feature(&mut self, feature: Feature, value_count: usize, is_entity_less: bool) {
-        let feature_name = self.format_feature_name(&feature, is_entity_less, true);
+        let feature_name = self.format_feature_name(&feature);
         self.features.push(feature_name);
-        self.results.push(FeatureResults {
-            values: vec![ValueWrapper(Value { val: None }); value_count],
-            statuses: vec![FeatureStatus::NotFound; value_count],
-            event_timestamps: vec![DateTime::<Utc>::UNIX_EPOCH; value_count],
-        });
+        self.push_empty_values(value_count);
     }
 
-    fn format_feature_name(
-        &self,
-        feature: &Feature,
-        is_entity_less: bool,
-        is_missing: bool,
-    ) -> Spur {
+    fn format_feature_name(&self, feature: &Feature) -> Spur {
         let rodeo = intern::rodeo_ref();
         if self.full_feature_names {
             rodeo.get_or_intern(format!(
