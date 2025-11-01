@@ -1,5 +1,6 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value, value_type};
+use crate::intern;
 use crate::model;
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
@@ -8,6 +9,7 @@ use crate::model::{
 use crate::onlinestore::OnlineStore;
 use crate::registry::FeatureRegistryService;
 use anyhow::{Result, anyhow};
+use lasso::Spur;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
@@ -34,27 +36,33 @@ impl FeatureStore {
         request: GetOnlineFeaturesRequest,
     ) -> Result<GetOnlineFeatureResponse> {
         let requested_features: RequestedFeatures = RequestedFeatures::from(&request);
+
+        let GetOnlineFeaturesRequest {
+            entities,
+            feature_service,
+            features,
+            full_feature_names,
+        } = request;
+        let rodeo = intern::rodeo_ref();
+        let entities: HashMap<Spur, Vec<EntityIdValue>> = entities
+            .into_iter()
+            .map(|(e, v)| (rodeo.get_or_intern(&e), v))
+            .collect();
         let feature_to_view: HashMap<Feature, Arc<FeatureView>> = self
             .registry
             .request_to_view_keys(requested_features)
             .await?;
 
-        let lookup_mapping = build_lookup_key_mapping(
-            &feature_to_view,
-            request
-                .entities
-                .keys()
-                .map(|key| key.as_ref())
-                .collect::<Vec<_>>(),
-        );
+        let lookup_mapping =
+            build_lookup_key_mapping(&feature_to_view, entities.keys().collect::<Vec<_>>());
         // feature view name to feature view
-        let view_name_to_view: HashMap<&str, Arc<FeatureView>> = feature_to_view
+        let view_name_to_view: HashMap<Spur, Arc<FeatureView>> = feature_to_view
             .values()
-            .map(|view| (view.name.as_ref(), view.clone()))
+            .map(|view| (view.name, view.clone()))
             .collect();
 
         let features_with_keys: Vec<FeatureWithKeys> =
-            feature_views_to_keys(&feature_to_view, &request.entities, &lookup_mapping)?;
+            feature_views_to_keys(&feature_to_view, &entities, &lookup_mapping)?;
 
         let mut features: HashMap<HashEntityKey, Vec<Feature>> = HashMap::default();
 
@@ -75,12 +83,12 @@ impl FeatureStore {
             .collect();
 
         GetOnlineFeatureResponse::try_from(
-            request.entities,
+            entities,
             feature_rows,
             view_name_to_view,
-            &lookup_mapping,
+            lookup_mapping,
             feature_set,
-            request.full_feature_names.unwrap_or(false),
+            full_feature_names.unwrap_or(false),
         )
     }
 }
@@ -93,13 +101,13 @@ pub struct FeatureWithKeys {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct EntityColumnRef<'a> {
-    pub view_name: &'a str,
-    pub column_name: &'a str,
+pub(crate) struct EntityColumnRef {
+    pub view_name: Spur,
+    pub column_name: Spur,
 }
 
-impl<'a> EntityColumnRef<'a> {
-    pub(crate) fn new(view_name: &'a str, column_name: &'a str) -> Self {
+impl EntityColumnRef {
+    pub(crate) fn new(view_name: Spur, column_name: Spur) -> Self {
         Self {
             view_name,
             column_name,
@@ -116,17 +124,18 @@ fn entity_key_for_entity_less_feature() -> Arc<Vec<Arc<EntityKey>>> {
     })])
 }
 
-struct LookupKey<'a> {
-    origin_col_name: &'a str,
-    lookup: &'a str,
+struct LookupKey {
+    origin_col_name: Spur,
+    lookup: Spur,
     value_type: value_type::Enum,
 }
 
-fn build_lookup_key_mapping<'a>(
-    feature_to_view: &'a HashMap<Feature, Arc<FeatureView>>,
-    entities_from_request: Vec<&str>,
-) -> HashMap<EntityColumnRef<'a>, Arc<str>> {
+fn build_lookup_key_mapping(
+    feature_to_view: &HashMap<Feature, Arc<FeatureView>>,
+    entities_from_request: Vec<&Spur>,
+) -> HashMap<EntityColumnRef, Spur> {
     let mut mapping = HashMap::with_capacity_and_hasher(feature_to_view.len(), Default::default());
+    let rodeo = intern::rodeo_ref();
 
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
@@ -136,14 +145,14 @@ fn build_lookup_key_mapping<'a>(
             let lookup_name = if let Some(join_key_map) = &view.join_key_map {
                 join_key_map
                     .get(&col.name)
-                    .filter(|col_name| entities_from_request.contains(&col_name.as_ref()))
+                    .filter(|col_name| entities_from_request.contains(col_name))
                     .cloned()
-                    .unwrap_or(col.name.clone())
+                    .unwrap_or(col.name)
             } else {
-                col.name.clone()
+                col.name
             };
-            let key = EntityColumnRef::new(view.name.as_ref(), col.name.as_ref());
-            mapping.insert(key, lookup_name.clone());
+            let key = EntityColumnRef::new(view.name, col.name);
+            mapping.insert(key, lookup_name);
         }
     }
     mapping
@@ -153,11 +162,12 @@ fn build_lookup_key_mapping<'a>(
 /// Returns a mapping from requested features to shared entity key vectors.
 fn feature_views_to_keys(
     feature_to_view: &HashMap<Feature, Arc<FeatureView>>,
-    requested_entity_keys: &HashMap<Arc<str>, Vec<EntityIdValue>>,
-    lookup_mapping: &HashMap<EntityColumnRef, Arc<str>>,
+    requested_entity_keys: &HashMap<Spur, Vec<EntityIdValue>>,
+    lookup_mapping: &HashMap<EntityColumnRef, Spur>,
 ) -> Result<Vec<FeatureWithKeys>> {
     let mut result = vec![];
-    let mut key_cache: HashMap<Vec<&str>, Arc<Vec<Arc<EntityKey>>>> = HashMap::default();
+    let mut key_cache: HashMap<Vec<Spur>, Arc<Vec<Arc<EntityKey>>>> = HashMap::default();
+    let rodeo = intern::rodeo_ref();
     for (feature, view) in feature_to_view {
         if view.is_entity_less() {
             result.push(FeatureWithKeys {
@@ -170,20 +180,19 @@ fn feature_views_to_keys(
                 .entity_columns
                 .iter()
                 .map(|col| {
-                    let entity_col_ref =
-                        EntityColumnRef::new(view.name.as_ref(), col.name.as_ref());
+                    let entity_col_ref = EntityColumnRef::new(view.name, col.name);
                     lookup_mapping
                         .get(&entity_col_ref)
                         .map(|lookup| LookupKey {
-                            origin_col_name: col.name.as_ref(),
-                            lookup: lookup.as_ref(),
+                            origin_col_name: col.name,
+                            lookup: *lookup,
                             value_type: col.value_type,
                         })
                         .ok_or_else(|| {
                             anyhow!(
                                 "Missing entity column mapping for column {} in feature view {}",
-                                col.name,
-                                view.name.as_ref()
+                                rodeo.resolve(&col.name),
+                                rodeo.resolve(&view.name)
                             )
                         })
                 })
@@ -191,15 +200,15 @@ fn feature_views_to_keys(
             if lookup_keys.is_empty() {
                 return Err(anyhow!(
                     "Feature view {} has no entity columns",
-                    view.name.as_ref()
+                    rodeo.resolve(&view.name)
                 ));
             }
             for lookup_key in &lookup_keys {
-                if !requested_entity_keys.contains_key(lookup_key.lookup) {
+                if !requested_entity_keys.contains_key(&lookup_key.lookup) {
                     return Err(anyhow!(
                         "Missing entity key: {} for requested feature {}",
-                        &lookup_key.lookup,
-                        feature.feature_name
+                        rodeo.resolve(&lookup_key.lookup),
+                        rodeo.resolve(&feature.feature_name)
                     ));
                 }
             }
@@ -207,7 +216,7 @@ fn feature_views_to_keys(
             let cache_key = lookup_keys
                 .iter()
                 .map(|lookup_key| lookup_key.origin_col_name)
-                .collect::<Vec<&str>>();
+                .collect::<Vec<Spur>>();
             let entity_keys = match key_cache.entry(cache_key) {
                 Entry::Occupied(entry) => Arc::clone(entry.get()),
                 Entry::Vacant(entry) => {
@@ -215,11 +224,11 @@ fn feature_views_to_keys(
                         .first()
                         .expect("lookup_keys should not be empty")
                         .lookup;
-                    let num_entities = requested_entity_keys[first_lookup_key].len();
+                    let num_entities = requested_entity_keys[&first_lookup_key].len();
 
                     let lookup_values_vec: Vec<_> = lookup_keys
                         .iter()
-                        .map(|lookup_key| &requested_entity_keys[lookup_key.lookup])
+                        .map(|lookup_key| &requested_entity_keys[&lookup_key.lookup])
                         .collect();
 
                     let mut entity_keys_vec = Vec::with_capacity(num_entities);
@@ -233,7 +242,10 @@ fn feature_views_to_keys(
                             .collect::<Result<Vec<Value>>>()?;
                         let join_keys = lookup_keys
                             .iter()
-                            .map(|lookup_key| lookup_key.origin_col_name.to_string())
+                            // TODO optimize: replace with pre-resolved strings
+                            .map(|lookup_key| {
+                                rodeo.resolve(&lookup_key.origin_col_name).to_string()
+                            })
                             .collect();
                         entity_keys_vec.push(Arc::new(EntityKey {
                             join_keys,
@@ -257,6 +269,7 @@ fn feature_views_to_keys(
 mod tests {
     use super::*;
     use crate::feast::types::{value, value_type};
+    use crate::intern::rodeo;
     use crate::model::{EntityIdValue, Field, GetOnlineFeaturesRequest};
     use chrono::Duration;
     use rustc_hash::FxHashMap as HashMap;
@@ -300,34 +313,28 @@ mod tests {
     }
 
     fn get_features_views() -> Vec<FeatureView> {
-        let feature_view_1 = FeatureView {
-            name: Arc::<str>::from("feature_view1"),
-            features: Arc::new(vec![]),
-            ttl: Duration::seconds(1),
-            entity_names: vec![Arc::<str>::from("entity_1")],
-            entity_columns: vec![Field {
-                name: Arc::<str>::from("entity_col_1"),
-                value_type: value_type::Enum::Int32,
-            }],
-            join_key_map: None,
-        };
-        let feature_view_2 = FeatureView {
-            name: Arc::<str>::from("feature_view2"),
-            features: Arc::new(vec![]),
-            ttl: Duration::seconds(1),
-            entity_names: vec![Arc::<str>::from("entity_1"), Arc::<str>::from("entity_2")],
-            entity_columns: vec![
-                Field {
-                    name: Arc::<str>::from("entity_col_1"),
-                    value_type: value_type::Enum::Int32,
-                },
-                Field {
-                    name: Arc::<str>::from("entity_col_2"),
-                    value_type: value_type::Enum::Int32,
-                },
+        let feature_view_1 = FeatureView::new(
+            "feature_view1",
+            vec![],
+            Duration::seconds(1),
+            vec![rodeo().get_or_intern("entity_1")],
+            vec![Field::new("entity_col_1", value_type::Enum::Int32)],
+            None,
+        );
+        let feature_view_2 = FeatureView::new(
+            "feature_view2",
+            vec![],
+            Duration::seconds(1),
+            vec![
+                rodeo().get_or_intern("entity_1"),
+                rodeo().get_or_intern("entity_2"),
             ],
-            join_key_map: None,
-        };
+            vec![
+                Field::new("entity_col_1", value_type::Enum::Int32),
+                Field::new("entity_col_2", value_type::Enum::Int32),
+            ],
+            None,
+        );
         vec![feature_view_1, feature_view_2]
     }
 
@@ -357,15 +364,15 @@ mod tests {
             let features = get_features_views();
             (features[0].clone(), features[1].clone())
         };
-        let feature_1 = Feature::new("feature_view1", "col1");
-        let feature_2 = Feature::new("feature_view2", "col2");
+        let feature_1 = Feature::from_names("feature_view1", "col1");
+        let feature_2 = Feature::from_names("feature_view2", "col2");
         let features = HashMap::from_iter([
             (feature_1.clone(), Arc::new(feature_view_1)),
             (feature_2.clone(), Arc::new(feature_view_2)),
         ]);
         let requested_entity_keys = HashMap::from_iter([
             (
-                Arc::<str>::from("entity_col_1"),
+                rodeo().get_or_intern("entity_col_1"),
                 vec![
                     EntityIdValue::Int(12),
                     EntityIdValue::Int(14),
@@ -373,7 +380,7 @@ mod tests {
                 ],
             ),
             (
-                Arc::<str>::from("entity_col_2"),
+                rodeo().get_or_intern("entity_col_2"),
                 vec![
                     EntityIdValue::Int(22),
                     EntityIdValue::Int(24),
@@ -381,13 +388,8 @@ mod tests {
                 ],
             ),
         ]);
-        let lookup_mapping = build_lookup_key_mapping(
-            &features,
-            requested_entity_keys
-                .keys()
-                .map(|key| key.as_ref())
-                .collect::<Vec<_>>(),
-        );
+        let lookup_mapping =
+            build_lookup_key_mapping(&features, requested_entity_keys.keys().collect::<Vec<_>>());
         let mut result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         result.sort_by_key(|f| {
             (
@@ -396,8 +398,8 @@ mod tests {
             )
         });
         assert_eq!(result.len(), 2);
-        let feature_1 = Feature::new("feature_view1", "col1");
-        let feature_2 = Feature::new("feature_view2", "col2");
+        let feature_1 = Feature::from_names("feature_view1", "col1");
+        let feature_2 = Feature::from_names("feature_view2", "col2");
 
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
         let entity_values_2 = build_entity_keys(
@@ -435,29 +437,24 @@ mod tests {
             features[0].clone()
         };
         feature_view_1.join_key_map = Some(HashMap::from_iter([(
-            Arc::<str>::from("entity_col_1"),
-            Arc::<str>::from("alias_1"),
+            rodeo().get_or_intern("entity_col_1"),
+            rodeo().get_or_intern("alias_1"),
         )]));
-        let feature_1 = Feature::new("feature_view1", "col1");
+        let feature_1 = Feature::from_names("feature_view1", "col1");
         let features = HashMap::from_iter([(feature_1.clone(), Arc::from(feature_view_1))]);
         let requested_entity_keys = HashMap::from_iter([(
-            Arc::<str>::from("alias_1"),
+            rodeo().get_or_intern("alias_1"),
             vec![
                 EntityIdValue::Int(12),
                 EntityIdValue::Int(14),
                 EntityIdValue::Int(16),
             ],
         )]);
-        let lookup_mapping = build_lookup_key_mapping(
-            &features,
-            requested_entity_keys
-                .keys()
-                .map(|key| key.as_ref())
-                .collect::<Vec<_>>(),
-        );
+        let lookup_mapping =
+            build_lookup_key_mapping(&features, requested_entity_keys.keys().collect::<Vec<_>>());
         let result = feature_views_to_keys(&features, &requested_entity_keys, &lookup_mapping)?;
         assert_eq!(result.len(), 1);
-        let feature_1 = Feature::new("feature_view1", "col1");
+        let feature_1 = Feature::from_names("feature_view1", "col1");
 
         let entity_values_1 = build_entity_keys(&vec!["entity_col_1"], &[12, 14, 16]);
 
@@ -500,7 +497,7 @@ mod tests {
         let store = get_feature_store().await?;
 
         let entities = HashMap::from_iter([(
-            Arc::<str>::from("driver_id"),
+            "driver_id".to_string(),
             vec![
                 EntityIdValue::Int(1005),
                 EntityIdValue::Int(1002),
@@ -548,11 +545,11 @@ mod tests {
 
         let entities = HashMap::from_iter([
             (
-                Arc::<str>::from("truck_id"),
+                "truck_id".to_string(),
                 vec![EntityIdValue::Int(1002), EntityIdValue::Int(2003)],
             ),
             (
-                Arc::<str>::from("driver_id"),
+                "driver_id".to_string(),
                 vec![EntityIdValue::Int(1002), EntityIdValue::Int(1005)],
             ),
         ]);
@@ -575,11 +572,11 @@ mod tests {
         assert_eq!(
             feature_names,
             vec![
-                Arc::<str>::from("acc_rate"),
-                Arc::<str>::from("avg_daily_trips"),
-                Arc::<str>::from("conv_rate"),
-                Arc::<str>::from("driver_id"),
-                Arc::<str>::from("truck_id")
+                "acc_rate".to_string(),
+                "avg_daily_trips".to_string(),
+                "conv_rate".to_string(),
+                "driver_id".to_string(),
+                "truck_id".to_string()
             ]
         );
         Ok(())

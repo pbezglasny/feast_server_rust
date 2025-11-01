@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap as HashMap;
 use std::collections::HashMap as StdHashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -19,6 +19,7 @@ async-trait = { version = "0.1.89" }
 arc-swap = { version = "1.7.1" }
 chrono = { version = "0.4.42", features = ["default", "serde"] }
 rustls = { version = "0.23.34", default-features = false, features = ["ring"] }
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
 # Registry dependencies
 aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.106.0" }
