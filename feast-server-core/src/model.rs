@@ -433,7 +433,7 @@ impl TryFrom<EntityKey> for RequestedEntityKey {
                         (EntityIdValue::Int(v.into()), value_type::Enum::Int32)
                     }
                     Some(Val::StringVal(v)) => (EntityIdValue::String(v), value_type::Enum::String),
-                    None => return Err(anyhow!("Empty value ")),
+                    None => return Err(anyhow!("Entity value is None")),
                     _ => return Err(anyhow!("invalid value type")),
                 };
                 Ok(JoinKeyValue {
