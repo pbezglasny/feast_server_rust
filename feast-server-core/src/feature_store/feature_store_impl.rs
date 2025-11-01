@@ -4,8 +4,8 @@ use crate::intern;
 use crate::intern::rodeo_ref;
 use crate::model;
 use crate::model::{
-    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, RequestedEntityKey, Feature, FeatureType,
-    FeatureView, GetOnlineFeatureResponse, GetOnlineFeaturesRequest, JoinKeyValue,
+    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureType, FeatureView,
+    GetOnlineFeatureResponse, GetOnlineFeaturesRequest, JoinKeyValue, RequestedEntityKey,
     RequestedFeatures,
 };
 use crate::onlinestore::OnlineStore;
@@ -240,13 +240,10 @@ fn feature_views_to_keys(
                         let join_key_vals = lookup_keys
                             .iter()
                             .zip(lookup_values_vec.iter())
-                            .map(|(lookup_key, values)| {
-                                JoinKeyValue {
-                                    join_key: lookup_key.origin_col_name,
-                                    //
-                                    value: values[i].clone(),
-                                    value_type: lookup_key.value_type,
-                                }
+                            .map(|(lookup_key, values)| JoinKeyValue {
+                                join_key: lookup_key.origin_col_name,
+                                value: values[i].clone(),
+                                value_type: lookup_key.value_type,
                             })
                             .collect::<Vec<JoinKeyValue>>();
                         let entity_key_spur = RequestedEntityKey {

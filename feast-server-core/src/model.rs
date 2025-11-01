@@ -428,14 +428,16 @@ impl TryFrom<EntityKey> for RequestedEntityKey {
             .zip(entity_values)
             .map(|(join_key, value)| {
                 let (entity_id_value, value_type) = match value.val {
-                    Some(Val::Int64Val(v)) => (EntityIdValue::Int(v), value_type::Enum::Int64),
+                    Some(Val::Int64Val(v)) => Ok((EntityIdValue::Int(v), value_type::Enum::Int64)),
                     Some(Val::Int32Val(v)) => {
-                        (EntityIdValue::Int(v.into()), value_type::Enum::Int32)
+                        Ok((EntityIdValue::Int(v.into()), value_type::Enum::Int32))
                     }
-                    Some(Val::StringVal(v)) => (EntityIdValue::String(v), value_type::Enum::String),
-                    None => return Err(anyhow!("Entity value is None")),
-                    _ => return Err(anyhow!("invalid value type")),
-                };
+                    Some(Val::StringVal(v)) => {
+                        Ok((EntityIdValue::String(v), value_type::Enum::String))
+                    }
+                    None => Err(anyhow!("Entity value is None")),
+                    _ => Err(anyhow!("invalid value type")),
+                }?;
                 Ok(JoinKeyValue {
                     join_key: rodeo_ref().get_or_intern(&join_key),
                     value: entity_id_value,

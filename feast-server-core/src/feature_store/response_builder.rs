@@ -309,10 +309,10 @@ impl GetOnlineFeatureResponse {
             }
 
             let JoinKeyValue {
-                join_key,
-                value,
-                value_type,
-            } = entity_key.join_keys.pop().ok_or_else(|| anyhow!("Failed to extract join key from entity: no join keys present"))?;
+                join_key, value, ..
+            } = entity_key.join_keys.pop().ok_or_else(|| {
+                anyhow!("Failed to extract join key from entity: no join keys present")
+            })?;
             let entity_col_ref = EntityColumnRef::new(feature_view_name, join_key);
             let lookup_key = lookup_mapping
                 .get(&entity_col_ref)
