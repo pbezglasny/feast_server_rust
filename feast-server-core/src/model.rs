@@ -8,6 +8,7 @@ use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
 use crate::feast::types::{EntityKey, Value, value_type};
+use crate::intern::rodeo;
 use crate::util::prost_duration_to_duration;
 use crate::util::prost_timestamp_to_datetime;
 use anyhow::{Context, Result};
@@ -442,6 +443,13 @@ impl Feature {
         }
     }
 
+    pub fn entity_feature(feature_name: Spur) -> Self {
+        Self {
+            feature_view_name: rodeo().get_or_intern(""),
+            feature_name: feature_name.into(),
+        }
+    }
+
     pub fn from_names(feature_view_name: &str, feature_name: &str) -> Self {
         let rodeo = crate::intern::rodeo_ref();
         Self::new(
@@ -495,8 +503,7 @@ impl TryFrom<&str> for Feature {
                 rodeo.get_or_intern(&f_name[1..]),
             ))
         } else {
-            let empty = rodeo.get_or_intern("");
-            Ok(Self::new(rodeo.get_or_intern(s), empty))
+            Ok(Self::entity_feature(rodeo.get_or_intern(s)))
         }
     }
 }
