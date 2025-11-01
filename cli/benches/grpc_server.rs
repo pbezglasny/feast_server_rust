@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashMap as StdHashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -105,17 +105,15 @@ fn build_request() -> GetOnlineFeaturesRequest {
         })
         .collect();
 
-    let mut entities = HashMap::new();
-    entities.insert(
+    let entities = StdHashMap::from([(
         "driver_id".to_string(),
         RepeatedValue { val: entity_values },
-    );
-
+    )]);
     GetOnlineFeaturesRequest {
         kind: Some(Kind::Features(FeatureList { val: features })),
         entities,
         full_feature_names: true,
-        request_context: HashMap::new(),
+        request_context: StdHashMap::default(),
     }
 }
 

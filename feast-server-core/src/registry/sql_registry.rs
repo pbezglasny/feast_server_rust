@@ -1,13 +1,13 @@
 use crate::config::RegistryConfig;
-use crate::model::{
-    Entity, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest,
-};
+use crate::intern;
+use crate::model::{Entity, FeatureRegistry, FeatureService, FeatureView};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
+use lasso::Spur;
+use rustc_hash::FxHashMap as HashMap;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Acquire, Database, Executor, Pool, Postgres};
-use std::collections::HashMap;
 use std::str::FromStr;
 
 const FEAST_SQL_REGISTRY_MAX_CONNECTIONS_ENV_VAR: &str = "FEAST_SQL_REGISTRY_MAX_CONNECTIONS";
@@ -124,7 +124,7 @@ impl SqlFeatureRegistry {
             name_col: &'a str,
             proto_col: &'a str,
             type_name: &'a str,
-        ) -> Result<HashMap<String, T>>
+        ) -> Result<HashMap<Spur, T>>
         where
             T: TryFrom<Vec<u8>, Error = anyhow::Error>,
         {
@@ -137,6 +137,7 @@ impl SqlFeatureRegistry {
                 .fetch_all(conn)
                 .await?;
 
+            let rodeo = intern::rodeo_ref();
             rows.into_iter()
                 .map(|(name, proto)| {
                     T::try_from(proto)
@@ -148,13 +149,13 @@ impl SqlFeatureRegistry {
                                 e
                             )
                         })
-                        .map(|item| (name, item))
+                        .map(|item| (rodeo.get_or_intern(name), item))
                 })
                 .collect::<Result<HashMap<_, _>>>()
         }
 
         let entities = query_table::<Entity>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "entities",
             "entity_name",
@@ -164,7 +165,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let feature_views = query_table::<FeatureView>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "feature_views",
             "feature_view_name",
@@ -174,7 +175,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let on_demand_feature_views = query_table::<crate::model::OnDemandFeatureView>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "on_demand_feature_views",
             "feature_view_name",
@@ -184,7 +185,7 @@ impl SqlFeatureRegistry {
         .await?;
 
         let feature_services = query_table::<FeatureService>(
-            &mut *connection,
+            &mut connection,
             &self.project,
             "feature_services",
             "feature_service_name",
@@ -193,12 +194,12 @@ impl SqlFeatureRegistry {
         )
         .await?;
 
-        Ok(FileFeatureRegistry::from_registry(FeatureRegistry {
+        Ok(FileFeatureRegistry::from_registry(FeatureRegistry::new(
             entities,
             feature_views,
             on_demand_feature_views,
             feature_services,
-        }))
+        )))
     }
 }
 

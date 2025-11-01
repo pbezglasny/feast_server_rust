@@ -1,5 +1,6 @@
 use crate::config::EntityKeySerializationVersion;
 use crate::feast::types::{EntityKey, Value};
+use crate::intern;
 use crate::key_serialization::deserialize_key;
 use crate::key_serialization::serialize_key;
 use crate::model::{Feature, HashEntityKey};
@@ -7,10 +8,11 @@ use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use lasso::Spur;
 use prost::Message;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{FromRow, Pool, Row, Sqlite};
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -37,14 +39,14 @@ impl Default for ConnectionOptions {
 #[derive(Debug)]
 pub struct SqliteStoreRow {
     pub entity_key: Vec<u8>,
-    pub feature_name: String,
+    pub feature_name: Arc<str>,
     pub value: Vec<u8>,
     pub event_ts: DateTime<Utc>,
     pub created_ts: DateTime<Utc>,
 }
 
 impl SqliteStoreRow {
-    fn try_into_online_store_row(self, feature_view_name: &str) -> Result<OnlineStoreRow> {
+    fn try_into_online_store_row(self, feature_view_name: Spur) -> Result<OnlineStoreRow> {
         let Self {
             entity_key,
             feature_name,
@@ -52,22 +54,26 @@ impl SqliteStoreRow {
             event_ts,
             created_ts,
         } = self;
+        let rodeo = intern::rodeo_ref();
+
         let decoded_value = Value::decode(value.as_slice()).with_context(|| {
             format!(
                 "Failed to decode value for feature {}:{}",
-                feature_view_name, feature_name
+                rodeo.resolve(&feature_view_name),
+                feature_name
             )
         })?;
         let entity_key =
             deserialize_key(entity_key, EntityKeySerializationVersion::V3).map_err(|e| {
                 anyhow!(
                     "Failed to deserialize entity key for feature view {}: {:?}",
-                    feature_view_name,
+                    rodeo.resolve(&feature_view_name),
                     e
                 )
             })?;
+        let feature_name = rodeo.get_or_intern(feature_name.as_ref());
         Ok(OnlineStoreRow {
-            feature_view_name: feature_view_name.to_owned(),
+            feature_view_name,
             entity_key: HashEntityKey(Arc::new(entity_key)),
             feature_name,
             value: decoded_value,
@@ -86,7 +92,7 @@ impl FromRow<'_, SqliteRow> for SqliteStoreRow {
         let created_ts: DateTime<Utc> = row.try_get("created_ts")?;
         Ok(Self {
             entity_key,
-            feature_name,
+            feature_name: Arc::from(feature_name),
             value,
             event_ts,
             created_ts,
@@ -105,8 +111,8 @@ impl OnlineStore for SqliteOnlineStore {
         &self,
         features: HashMap<HashEntityKey, Vec<Feature>>,
     ) -> Result<Vec<OnlineStoreRow>> {
-        let mut view_to_keys: HashMap<Arc<str>, HashSet<Vec<u8>>> = HashMap::new();
-        let mut view_features: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
+        let mut view_to_keys: HashMap<Spur, HashSet<Vec<u8>>> = HashMap::default();
+        let mut view_features: HashMap<Spur, HashSet<Spur>> = HashMap::default();
 
         for (entity_key, feature_list) in features {
             let serialized_key = serialize_key(&entity_key.0, EntityKeySerializationVersion::V3)?;
@@ -116,7 +122,7 @@ impl OnlineStore for SqliteOnlineStore {
                     feature_name,
                 } = feature;
                 view_features
-                    .entry(feature_view_name.clone())
+                    .entry(feature_view_name)
                     .or_default()
                     .insert(feature_name);
 
@@ -135,7 +141,8 @@ impl OnlineStore for SqliteOnlineStore {
             }
 
             let mut connection = self.connection_pool.acquire().await?;
-            let table_name = format!("{}_{}", self.project, view_name);
+            let rodeo = intern::rodeo_ref();
+            let table_name = format!("{}_{}", self.project, rodeo.resolve(&view_name));
 
             join_set.spawn(async move {
                 let entity_keys_parameters =
@@ -151,12 +158,12 @@ impl OnlineStore for SqliteOnlineStore {
                     sqlx_query = sqlx_query.bind(key);
                 }
                 for feature_name in features {
-                    sqlx_query = sqlx_query.bind(feature_name.to_string());
+                    sqlx_query = sqlx_query.bind(rodeo.resolve(&feature_name));
                 }
                 match sqlx_query.fetch_all(&mut *connection).await {
                     Ok(rows) => rows
                         .into_iter()
-                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(&view_name))
+                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(view_name))
                         .collect::<Result<Vec<_>>>(),
                     Err(sqlx::Error::Database(db_err))
                         if db_err.message().contains("no such table") =>
@@ -240,9 +247,9 @@ mod test {
             }],
         });
 
-        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from([(
+        let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from_iter([(
             HashEntityKey(entity_key),
-            vec![Feature::new("driver_hourly_stats", "conv_rate")],
+            vec![Feature::from_names("driver_hourly_stats", "conv_rate")],
         )]);
 
         let sqlite_store = SqliteOnlineStore::from_options(

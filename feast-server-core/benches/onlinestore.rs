@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -38,7 +38,7 @@ fn bench_onlinestore(c: &mut Criterion) {
                 HashEntityKey(Arc::new(key)),
                 feature_names
                     .iter()
-                    .map(|feature| Feature::new("driver_hourly_stats", *feature))
+                    .map(|feature| Feature::from_names("driver_hourly_stats", feature))
                     .collect(),
             )
         })

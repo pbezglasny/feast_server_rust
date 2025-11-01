@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
@@ -64,7 +64,7 @@ pub async fn feature_store() -> Result<Arc<FeatureStore>> {
 }
 
 pub fn sample_request() -> GetOnlineFeaturesRequest {
-    let entities = HashMap::from([(
+    let entities = HashMap::from_iter([(
         "driver_id".to_string(),
         vec![
             EntityIdValue::Int(1005),

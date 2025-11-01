@@ -4,7 +4,7 @@ use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum;
 use crate::feast::types::{BytesList, EntityKey};
 use anyhow::{Context, Result, anyhow};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 fn serialize_value(value: &Value) -> Result<Vec<u8>> {
     let val = value.val.as_ref().ok_or(anyhow!("Missing value"))?;

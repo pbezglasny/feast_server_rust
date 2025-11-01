@@ -14,10 +14,11 @@ rest-server = { path = "../rest-server" }
 grpc-server = { path = "../grpc-server" }
 anyhow = { workspace = true }
 tokio = { workspace = true }
-tracing = {workspace = true}
+tracing = { workspace = true }
 clap = { version = "4.4.7", features = ["derive"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 axum-server = "0.7.2"
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_tokio"] }
@@ -26,6 +27,7 @@ bytes = "1"
 tonic = { version = "0.12", features = ["transport"] }
 prost = "0.13"
 prost-types = "0.13"
+rustc-hash = { workspace = true }
 
 [[bench]]
 name = "rest_server"

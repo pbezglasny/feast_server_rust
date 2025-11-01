@@ -7,12 +7,17 @@ use crate::model::{
 use crate::registry::FeatureRegistryService;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
+use lasso::Spur;
 use prost::Message;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::io::Read;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use crate::intern;
 
 #[derive(Debug)]
 pub struct FileFeatureRegistry {
@@ -58,75 +63,73 @@ impl FileFeatureRegistry {
 
     fn feature_views_from_service(
         &self,
-        service_name: &str,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+        service_name: Spur,
+    ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
+        let rodeo = intern::rodeo_ref();
         let service = self
             .registry
             .feature_services
-            .get(service_name)
-            .cloned()
-            .ok_or_else(|| FeastCoreError::feature_service_not_found(service_name))?;
-        let mut result = HashMap::new();
-        let FeatureService {
-            name,
-            project,
-            created_timestamp,
-            last_updated_timestamp,
-            projections,
-            logging_config,
-        } = service;
-        for projection in projections {
+            .get(&service_name)
+            .ok_or_else(|| {
+                FeastCoreError::feature_service_not_found(rodeo.resolve(&service_name))
+            })?;
+        if service.resolved_projections.len() != service.projections.len() {
+            let feature_names = service
+                .missing_feature_views
+                .iter()
+                .map(|feature| rodeo.resolve(feature))
+                .collect::<Vec<&str>>()
+                .join(", ");
+            return Err(FeastCoreError::feature_view_not_found_for_service(
+                feature_names,
+                rodeo.resolve(&service_name).to_string(),
+            )
+            .into());
+        }
+        let mut result: HashMap<Feature, Arc<FeatureView>> = HashMap::default();
+        for resolved in &service.resolved_projections {
             if self
                 .registry
                 .on_demand_feature_views
-                .contains_key(projection.feature_view_name.as_ref())
+                .contains_key(&resolved.feature_view.name)
             {
                 return Err(anyhow!("OnDemand feature view for now is not supported"));
             }
-            let mut feature_view = self
-                .registry
-                .feature_views
-                .get(projection.feature_view_name.as_ref())
-                .cloned()
-                .ok_or_else(|| {
-                    FeastCoreError::feature_view_not_found_for_service(
-                        projection.feature_view_name.as_ref().to_string(),
-                        service_name.to_string(),
-                    )
-                })?;
-            feature_view.join_key_map = Some(projection.join_key_map);
-            for feature_name in projection.features {
-                let req_feature = Feature::new(
-                    projection.feature_view_name.clone(),
-                    feature_name.name.clone(),
-                );
-                result.insert(req_feature, feature_view.clone());
+
+            for field in resolved.feature_view.features.iter() {
+                let feature = Feature::new(resolved.feature_view.name, field.name);
+                result.insert(feature, resolved.feature_view.clone());
             }
         }
         Ok(result)
     }
 
-    fn feature_views_from_names(&self, names: &[Feature]) -> Result<HashMap<Feature, FeatureView>> {
+    fn feature_views_from_names(
+        &self,
+        names: &[Feature],
+    ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
+        let rodeo = intern::rodeo_ref();
         names
             .iter()
-            .map(|req_feature| -> Result<(Feature, FeatureView)> {
-                let feature_view_name = req_feature.feature_view_name.as_ref();
+            .map(|req_feature| -> Result<(Feature, Arc<FeatureView>)> {
                 if self
                     .registry
                     .on_demand_feature_views
-                    .contains_key(feature_view_name)
+                    .contains_key(&req_feature.feature_view_name)
                 {
                     return Err(anyhow!("OnDemand feature view for now is not supported"));
                 }
                 let view = self
                     .registry
                     .feature_views
-                    .get(feature_view_name)
+                    .get(&req_feature.feature_view_name)
                     .cloned()
                     .ok_or_else(|| {
-                        FeastCoreError::feature_view_not_found(feature_view_name.to_string())
+                        FeastCoreError::feature_view_not_found(
+                            rodeo.resolve(&req_feature.feature_view_name),
+                        )
                     })?;
-                Ok((req_feature.clone(), view))
+                Ok((req_feature.clone(), Arc::from(view)))
             })
             .collect()
     }
@@ -134,16 +137,16 @@ impl FileFeatureRegistry {
     fn get_feature_views(
         &self,
         requested_features: RequestedFeatures,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
         match requested_features {
             RequestedFeatures::FeatureService(service_name) => {
-                self.feature_views_from_service(&service_name)
+                self.feature_views_from_service(service_name)
             }
             RequestedFeatures::FeatureNames(names) => {
                 let mut bad_requests = vec![];
                 let parsed_requested_features: Vec<Feature> = names
-                    .into_iter()
-                    .map(|f| Feature::try_from(f.as_str()))
+                    .iter()
+                    .map(Feature::try_from)
                     .filter_map(|r| r.map_err(|e| bad_requests.push(e)).ok())
                     .collect();
                 if !bad_requests.is_empty() {
@@ -165,10 +168,10 @@ impl FileFeatureRegistry {
 
 #[async_trait]
 impl FeatureRegistryService for FileFeatureRegistry {
-    async fn request_to_view_keys<'a>(
-        &'a self,
-        request: RequestedFeatures<'a>,
-    ) -> Result<HashMap<Feature, FeatureView>> {
+    async fn request_to_view_keys(
+        &self,
+        request: RequestedFeatures,
+    ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
         self.get_feature_views(request)
     }
 }
@@ -186,7 +189,10 @@ mod tests {
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
         let registry_path = std::path::PathBuf::from(&registry_file);
         let feature_registry = FileFeatureRegistry::from_path(&registry_path)?;
-        let requested_features = vec![Feature::new("driver_hourly_stats_fresh", "conv_rate")];
+        let requested_features = vec![Feature::from_names(
+            "driver_hourly_stats_fresh",
+            "conv_rate",
+        )];
         let found_views = feature_registry.feature_views_from_names(&requested_features)?;
         assert_eq!(found_views.len(), 1);
         Ok(())
