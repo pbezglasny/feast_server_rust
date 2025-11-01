@@ -53,14 +53,13 @@ pub struct RequestEntityIdKey {
 }
 
 fn get_feature_status(
-    // value: &Value,
+    value: &Value,
     feature_view: Option<Arc<FeatureView>>,
     event_ts: &DateTime<Utc>,
 ) -> FeatureStatus {
-    /*    if value.val.is_none() {
+    if value.val.is_none() {
         FeatureStatus::NullValue
-    } else */
-    if let Some(feature_view) = feature_view {
+    } else if let Some(feature_view) = feature_view {
         if let Some(expiration_time) = event_ts.checked_add_signed(feature_view.ttl) {
             if Utc::now() > expiration_time {
                 FeatureStatus::OutsideMaxAge
@@ -325,7 +324,7 @@ impl GetOnlineFeatureResponse {
 
             let feature = Feature::new(entity_col_ref.view_name, feature_name);
             let status = get_feature_status(
-                // &value,
+                &feature_value,
                 feature_views.get(&entity_col_ref.view_name).cloned(),
                 &event_ts,
             );
