@@ -4,8 +4,8 @@ use crate::feature_store::feature_store_impl::{EntityColumnRef, FeatureWithKeys}
 use crate::intern;
 use crate::model::FeatureStatus::Present;
 use crate::model::{
-    DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureResults, FeatureStatus,
-    FeatureType, FeatureView, GetOnlineFeatureResponse, ValueWrapper,
+    DUMMY_ENTITY_ID, EntityIdValue, Feature, FeatureResults, FeatureStatus, FeatureType,
+    FeatureView, GetOnlineFeatureResponse, ValueWrapper,
 };
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
@@ -13,6 +13,9 @@ use chrono::{DateTime, Duration, SubsecRound, Utc};
 use lasso::Spur;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
+
+static DUMMY_ENTITY_ID_SPUR: std::sync::LazyLock<Spur> =
+    std::sync::LazyLock::new(|| intern::rodeo_ref().get_or_intern(DUMMY_ENTITY_ID));
 
 #[derive(Debug, Clone)]
 struct ResponseFeatureRow(Feature, Value, FeatureStatus, DateTime<Utc>);
@@ -140,11 +143,16 @@ impl GetOnlineFeatureResponseBuilder {
         });
     }
 
-    fn ensure_feature_slot(&mut self, feature: &Feature, value_count: usize) -> usize {
+    fn ensure_feature_slot(
+        &mut self,
+        feature: &Feature,
+        value_count: usize,
+        is_entity_less: bool,
+    ) -> usize {
         if let Some(&idx) = self.feature_to_idx.get(feature) {
             return idx;
         }
-        let feature_name = self.format_feature_name(feature);
+        let feature_name = self.format_feature_name(feature, is_entity_less);
         let idx = self.features.len();
         self.features.push(feature_name);
         self.push_empty_values(value_count);
@@ -185,14 +193,14 @@ impl GetOnlineFeatureResponseBuilder {
     }
 
     fn add_missing_feature(&mut self, feature: Feature, value_count: usize, is_entity_less: bool) {
-        let feature_name = self.format_feature_name(&feature);
+        let feature_name = self.format_feature_name(&feature, is_entity_less);
         self.features.push(feature_name);
         self.push_empty_values(value_count);
     }
 
-    fn format_feature_name(&self, feature: &Feature) -> Spur {
+    fn format_feature_name(&self, feature: &Feature, is_entity_less: bool) -> Spur {
         let rodeo = intern::rodeo_ref();
-        if self.full_feature_names {
+        if self.full_feature_names && !is_entity_less {
             rodeo.get_or_intern(format!(
                 "{}__{}",
                 rodeo.resolve(&feature.feature_view_name),
@@ -237,7 +245,6 @@ impl GetOnlineFeatureResponse {
         full_feature_names: bool,
     ) -> Result<Self> {
         let rodeo = intern::rodeo_ref();
-        let dummy_spur = rodeo.get_or_intern(DUMMY_ENTITY_ID);
         let mut ordered_entities: Vec<(Spur, Vec<EntityIdValue>)> =
             entity_keys.into_iter().collect();
         let entity_count = ordered_entities.len();
@@ -331,7 +338,8 @@ impl GetOnlineFeatureResponse {
                     .get(position.entity_idx)
                     .copied()
                     .unwrap_or(0);
-                let feature_idx = response_builder.ensure_feature_slot(&feature, value_count);
+                let feature_idx =
+                    response_builder.ensure_feature_slot(&feature, value_count, false);
                 response_builder.set_feature_value(
                     feature_idx,
                     position.value_idx,
@@ -340,7 +348,7 @@ impl GetOnlineFeatureResponse {
                     event_ts,
                 );
                 feature_set.remove(&feature);
-            } else if *lookup_key == dummy_spur {
+            } else if *lookup_key == *DUMMY_ENTITY_ID_SPUR {
                 feature_set.remove(&feature);
                 response_builder.add_entity_less_feature(feature, value, status, event_ts);
             } else {
@@ -384,7 +392,7 @@ mod tests {
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
     use lasso::Interner;
-    use rustc_hash::{FxHashMap as HashMap, FxHashMap};
+    use rustc_hash::FxHashMap as HashMap;
     use std::sync::Arc;
 
     #[test]

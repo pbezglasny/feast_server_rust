@@ -115,14 +115,15 @@ impl EntityColumnRef {
     }
 }
 
-fn entity_key_for_entity_less_feature() -> Arc<Vec<Arc<EntityKey>>> {
-    Arc::new(vec![Arc::new(EntityKey {
-        join_keys: vec![DUMMY_ENTITY_ID.to_string()],
-        entity_values: vec![Value {
-            val: Some(Val::StringVal(DUMMY_ENTITY_VAL.to_string())),
-        }],
-    })])
-}
+static ENTITY_LESS_FEATURE_KEY: std::sync::LazyLock<Arc<Vec<Arc<EntityKey>>>> =
+    std::sync::LazyLock::new(|| {
+        Arc::new(vec![Arc::new(EntityKey {
+            join_keys: vec![DUMMY_ENTITY_ID.to_string()],
+            entity_values: vec![Value {
+                val: Some(Val::StringVal(DUMMY_ENTITY_VAL.to_string())),
+            }],
+        })])
+    });
 
 struct LookupKey {
     origin_col_name: Spur,
@@ -173,7 +174,7 @@ fn feature_views_to_keys(
             result.push(FeatureWithKeys {
                 feature: feature.clone(),
                 feature_type: FeatureType::EntityLess,
-                entity_keys: entity_key_for_entity_less_feature(),
+                entity_keys: ENTITY_LESS_FEATURE_KEY.clone(),
             });
         } else {
             let lookup_keys: Vec<LookupKey> = view
