@@ -1,6 +1,7 @@
 use crate::feast::types::value::Val;
 use crate::feast::types::{EntityKey, Value};
 use crate::feature_store::feature_store_impl::{EntityColumnRef, FeatureWithKeys};
+use crate::intern;
 use crate::model::FeatureStatus::Present;
 use crate::model::{
     DUMMY_ENTITY_ID, DUMMY_ENTITY_VAL, EntityIdValue, Feature, FeatureResults, FeatureStatus,
@@ -9,7 +10,7 @@ use crate::model::{
 use crate::onlinestore::OnlineStoreRow;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
-use lasso::{Spur, ThreadedRodeo};
+use lasso::Spur;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
 
@@ -91,23 +92,16 @@ struct GetOnlineFeatureResponseBuilder {
     features: Vec<Spur>,
     results: Vec<FeatureResults>,
     feature_to_idx: HashMap<Feature, usize>,
-    rodeo: Arc<ThreadedRodeo>,
 }
 
 impl GetOnlineFeatureResponseBuilder {
-    fn new(
-        full_feature_names: bool,
-        num_values: usize,
-        capacity: usize,
-        rodeo: Arc<ThreadedRodeo>,
-    ) -> Self {
+    fn new(full_feature_names: bool, num_values: usize, capacity: usize) -> Self {
         Self {
             full_feature_names,
             num_values,
             features: Vec::with_capacity(capacity),
             results: Vec::with_capacity(capacity),
             feature_to_idx: HashMap::default(),
-            rodeo,
         }
     }
 
@@ -168,12 +162,12 @@ impl GetOnlineFeatureResponseBuilder {
         status: FeatureStatus,
         event_ts: DateTime<Utc>,
     ) {
-        if let Some(slot) = self.results.get_mut(feature_idx) {
-            if value_idx < slot.values.len() {
-                slot.values[value_idx] = ValueWrapper(value);
-                slot.statuses[value_idx] = status;
-                slot.event_timestamps[value_idx] = event_ts;
-            }
+        if let Some(slot) = self.results.get_mut(feature_idx)
+            && value_idx < slot.values.len()
+        {
+            slot.values[value_idx] = ValueWrapper(value);
+            slot.statuses[value_idx] = status;
+            slot.event_timestamps[value_idx] = event_ts;
         }
     }
 
@@ -209,11 +203,12 @@ impl GetOnlineFeatureResponseBuilder {
         is_entity_less: bool,
         is_missing: bool,
     ) -> Spur {
+        let rodeo = intern::rodeo_ref();
         if self.full_feature_names {
-            self.rodeo.get_or_intern(format!(
+            rodeo.get_or_intern(format!(
                 "{}__{}",
-                self.rodeo.resolve(&feature.feature_view_name),
-                self.rodeo.resolve(&feature.feature_name)
+                rodeo.resolve(&feature.feature_view_name),
+                rodeo.resolve(&feature.feature_name)
             ))
         } else {
             feature.feature_name
@@ -221,12 +216,13 @@ impl GetOnlineFeatureResponseBuilder {
     }
 
     fn build(self) -> GetOnlineFeatureResponse {
+        let rodeo = intern::rodeo_ref();
         GetOnlineFeatureResponse {
             metadata: crate::model::GetOnlineFeatureResponseMetadata {
                 feature_names: self
                     .features
                     .into_iter()
-                    .map(|feature_name| self.rodeo.resolve(&feature_name).to_string())
+                    .map(|feature_name| rodeo.resolve(&feature_name).to_string())
                     .collect(),
             },
             results: self.results,
@@ -248,11 +244,11 @@ impl GetOnlineFeatureResponse {
         entity_keys: HashMap<Spur, Vec<EntityIdValue>>,
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<Spur, Arc<FeatureView>>,
-        lookup_mapping: &HashMap<EntityColumnRef, Spur>,
+        lookup_mapping: HashMap<EntityColumnRef, Spur>,
         mut feature_set: HashSet<Feature>,
         full_feature_names: bool,
-        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Self> {
+        let rodeo = intern::rodeo_ref();
         let dummy_spur = rodeo.get_or_intern(DUMMY_ENTITY_ID);
         let mut ordered_entities: Vec<(Spur, Vec<EntityIdValue>)> =
             entity_keys.into_iter().collect();
@@ -266,7 +262,7 @@ impl GetOnlineFeatureResponse {
         let mut entity_name_to_index: HashMap<Spur, usize> =
             HashMap::with_capacity_and_hasher(entity_count, Default::default());
         for (idx, (name, _)) in ordered_entities.iter().enumerate() {
-            entity_name_to_index.insert(name.clone(), idx);
+            entity_name_to_index.insert(*name, idx);
         }
 
         let mut positions: Vec<EntityPosition> = Vec::new();
@@ -274,7 +270,7 @@ impl GetOnlineFeatureResponse {
         for (entity_idx, (entity_name, values)) in ordered_entities.iter().enumerate() {
             for (value_idx, key) in values.iter().enumerate() {
                 let request_key = RequestEntityIdKey {
-                    name: entity_name.clone(),
+                    name: *entity_name,
                     value: key.clone(),
                 };
                 let slot = positions.len();
@@ -291,11 +287,10 @@ impl GetOnlineFeatureResponse {
             full_feature_names,
             max_value_count,
             entity_count + feature_set.len(),
-            rodeo.clone(),
         );
         for (entity_name, values) in ordered_entities.into_iter() {
             let expected_len = values.len();
-            let entity_idx = response_builder.push_entity(entity_name.clone(), expected_len);
+            let entity_idx = response_builder.push_entity(entity_name, expected_len);
             for value in values {
                 response_builder.push_entity_value(entity_idx, value);
             }
@@ -331,7 +326,7 @@ impl GetOnlineFeatureResponse {
                 .transpose()?
                 .ok_or(anyhow!("Empty entity id value"))?;
             let request_key = RequestEntityIdKey {
-                name: lookup_key.clone(),
+                name: *lookup_key,
                 value: entity_id_value.clone(),
             };
 
@@ -369,19 +364,19 @@ impl GetOnlineFeatureResponse {
         for feature in feature_set.into_iter() {
             if let Some(view_arc) = feature_views.get(&feature.feature_view_name) {
                 let view = view_arc.as_ref();
-                if view.is_entity_less(rodeo.clone()) {
+                if view.is_entity_less() {
                     response_builder.add_missing_feature(feature, max_value_count, true);
                     continue;
                 }
 
                 if let Some(column) = view.entity_columns.first() {
                     let entity_col_ref = EntityColumnRef::new(view.name, column.name);
-                    if let Some(request_key) = lookup_mapping.get(&entity_col_ref) {
-                        if let Some(&entity_idx) = entity_name_to_index.get(request_key) {
-                            let len = entity_lengths.get(entity_idx).copied().unwrap_or(0);
-                            response_builder.add_missing_feature(feature, len, false);
-                            continue;
-                        }
+                    if let Some(request_key) = lookup_mapping.get(&entity_col_ref)
+                        && let Some(&entity_idx) = entity_name_to_index.get(request_key)
+                    {
+                        let len = entity_lengths.get(entity_idx).copied().unwrap_or(0);
+                        response_builder.add_missing_feature(feature, len, false);
+                        continue;
                     }
                 }
             }
@@ -397,9 +392,11 @@ mod tests {
     use super::*;
     use crate::feast::types::value::Val;
     use crate::feast::types::{EntityKey, Value};
+    use crate::intern::rodeo;
     use crate::model::HashEntityKey;
     use anyhow::Result;
     use chrono::{Duration, SubsecRound, Utc};
+    use lasso::Interner;
     use rustc_hash::{FxHashMap as HashMap, FxHashMap};
     use std::sync::Arc;
 
@@ -407,7 +404,7 @@ mod tests {
     fn try_from_builds_response_with_missing_values() -> Result<()> {
         let mut entity_keys = HashMap::default();
         entity_keys.insert(
-            Arc::<str>::from("driver_id"),
+            rodeo().get_or_intern("driver_id"),
             vec![EntityIdValue::Int(1001), EntityIdValue::Int(1002)],
         );
 
@@ -422,31 +419,35 @@ mod tests {
             }],
         });
         let row = OnlineStoreRow {
-            feature_view_name: Arc::from("driver_hourly_stats"),
+            feature_view_name: rodeo().get_or_intern("driver_hourly_stats"),
             entity_key: HashEntityKey(entity_key),
-            feature_name: Arc::from("acc_rate"),
+            feature_name: rodeo().get_or_intern("acc_rate"),
             value: feature_value.clone(),
             event_ts,
             created_ts: None,
         };
 
         let mut feature_view = FeatureView::default();
-        feature_view.name = Arc::<str>::from("driver_hourly_stats");
+        feature_view.name = rodeo().get_or_intern("driver_hourly_stats");
         feature_view.ttl = Duration::seconds(3600);
-        feature_view.entity_names = vec![Arc::<str>::from("driver_id")];
+        feature_view.entity_names = vec![rodeo().get_or_intern("driver_id")];
 
-        let mut feature_views = HashMap::default();
+        let mut feature_views: HashMap<Spur, Arc<FeatureView>> = HashMap::default();
         let feature = Arc::from(feature_view);
-        let feature_name = feature.name.to_string();
-        feature_views.insert(feature_name.as_ref(), feature);
 
-        let features: HashSet<Feature> = vec![Feature::new("driver_hourly_stats", "acc_rate")]
-            .into_iter()
-            .collect();
+        feature_views.insert(feature.name, feature);
 
-        let lookup_mapping: HashMap<EntityColumnRef, Arc<str>> = vec![(
-            EntityColumnRef::new("driver_hourly_stats", "driver_id"),
-            Arc::from("driver_id"),
+        let features: HashSet<Feature> =
+            vec![Feature::from_names("driver_hourly_stats", "acc_rate")]
+                .into_iter()
+                .collect();
+
+        let lookup_mapping: HashMap<EntityColumnRef, Spur> = vec![(
+            EntityColumnRef::new(
+                rodeo().get_or_intern("driver_hourly_stats"),
+                rodeo().get_or_intern("driver_id"),
+            ),
+            rodeo().get_or_intern("driver_id"),
         )]
         .into_iter()
         .collect();
@@ -455,14 +456,13 @@ mod tests {
             entity_keys,
             vec![row],
             feature_views,
-            &lookup_mapping,
+            lookup_mapping,
             features,
             false,
         )?;
 
         let mut expected = GetOnlineFeatureResponse::default();
-        expected.metadata.feature_names =
-            vec![Arc::<str>::from("driver_id"), Arc::<str>::from("acc_rate")];
+        expected.metadata.feature_names = vec!["driver_id".to_string(), "acc_rate".to_string()];
         expected.results.push(FeatureResults {
             values: vec![
                 ValueWrapper::from(EntityIdValue::Int(1001)),

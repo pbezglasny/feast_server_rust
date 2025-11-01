@@ -7,7 +7,7 @@ use crate::model::{
 use crate::registry::FeatureRegistryService;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
-use lasso::{Spur, ThreadedRodeo};
+use lasso::Spur;
 use prost::Message;
 use rustc_hash::FxHashMap as HashMap;
 use std::fmt::Display;
@@ -17,22 +17,23 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::intern;
+
 #[derive(Debug)]
 pub struct FileFeatureRegistry {
     registry: FeatureRegistry,
-    rodeo: Arc<ThreadedRodeo>,
 }
 
 impl FileFeatureRegistry {
-    pub fn from_registry(registry: FeatureRegistry, rodeo: Arc<ThreadedRodeo>) -> Self {
-        Self { registry, rodeo }
+    pub fn from_registry(registry: FeatureRegistry) -> Self {
+        Self { registry }
     }
-    pub fn from_proto(proto_registry: Registry, rodeo: Arc<ThreadedRodeo>) -> Result<Self> {
-        let registry = FeatureRegistry::try_from((rodeo.clone(), proto_registry))?;
-        Ok(Self { registry, rodeo })
+    pub fn from_proto(proto_registry: Registry) -> Result<Self> {
+        let registry = FeatureRegistry::try_from(proto_registry)?;
+        Ok(Self { registry })
     }
 
-    pub fn from_path(registry_file_path: &PathBuf, rodeo: Arc<ThreadedRodeo>) -> Result<Self> {
+    pub fn from_path(registry_file_path: &PathBuf) -> Result<Self> {
         let mut file = fs::File::open(registry_file_path).map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
                 anyhow!(
@@ -56,31 +57,32 @@ impl FileFeatureRegistry {
                 registry_file_path.display()
             )
         })?;
-        let registry = FeatureRegistry::try_from((rodeo.clone(), registry_proto))?;
-        Ok(Self { registry, rodeo })
+        let registry = FeatureRegistry::try_from(registry_proto)?;
+        Ok(Self { registry })
     }
 
     fn feature_views_from_service(
         &self,
         service_name: Spur,
     ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
+        let rodeo = intern::rodeo_ref();
         let service = self
             .registry
             .feature_services
             .get(&service_name)
             .ok_or_else(|| {
-                FeastCoreError::feature_service_not_found(self.rodeo.resolve(&service_name))
+                FeastCoreError::feature_service_not_found(rodeo.resolve(&service_name))
             })?;
         if service.resolved_projections.len() != service.projections.len() {
             let feature_names = service
                 .missing_feature_views
                 .iter()
-                .map(|feature| self.rodeo.resolve(feature))
+                .map(|feature| rodeo.resolve(feature))
                 .collect::<Vec<&str>>()
                 .join(", ");
             return Err(FeastCoreError::feature_view_not_found_for_service(
                 feature_names,
-                self.rodeo.resolve(&service_name).to_string(),
+                rodeo.resolve(&service_name).to_string(),
             )
             .into());
         }
@@ -106,6 +108,7 @@ impl FileFeatureRegistry {
         &self,
         names: &[Feature],
     ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
+        let rodeo = intern::rodeo_ref();
         names
             .iter()
             .map(|req_feature| -> Result<(Feature, Arc<FeatureView>)> {
@@ -123,7 +126,7 @@ impl FileFeatureRegistry {
                     .cloned()
                     .ok_or_else(|| {
                         FeastCoreError::feature_view_not_found(
-                            self.rodeo.resolve(&req_feature.feature_view_name),
+                            rodeo.resolve(&req_feature.feature_view_name),
                         )
                     })?;
                 Ok((req_feature.clone(), Arc::from(view)))
@@ -143,7 +146,7 @@ impl FileFeatureRegistry {
                 let mut bad_requests = vec![];
                 let parsed_requested_features: Vec<Feature> = names
                     .iter()
-                    .map(|f| Feature::try_from((self.rodeo.clone(), f)))
+                    .map(Feature::try_from)
                     .filter_map(|r| r.map_err(|e| bad_requests.push(e)).ok())
                     .collect();
                 if !bad_requests.is_empty() {
@@ -186,7 +189,10 @@ mod tests {
         let registry_file = format!("{}/test_data/registry.pb", project_dir);
         let registry_path = std::path::PathBuf::from(&registry_file);
         let feature_registry = FileFeatureRegistry::from_path(&registry_path)?;
-        let requested_features = vec![Feature::new("driver_hourly_stats_fresh", "conv_rate")];
+        let requested_features = vec![Feature::from_names(
+            "driver_hourly_stats_fresh",
+            "conv_rate",
+        )];
         let found_views = feature_registry.feature_views_from_names(&requested_features)?;
         assert_eq!(found_views.len(), 1);
         Ok(())

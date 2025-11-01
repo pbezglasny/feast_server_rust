@@ -2,10 +2,8 @@ use crate::cli_options::{CliCommand, CliOptions};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use feast_server_core::config::{Provider, RepoConfig};
-use lasso::ThreadedRodeo;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -74,7 +72,6 @@ async fn main() -> Result<()> {
                     other
                 ));
             }
-            let rodeo = Arc::new(ThreadedRodeo::default());
             tracing::info!("Start serving on {}:{} using {}", host, port, r#type);
             let tls_enabled = key.is_some() && cert.is_some();
             let registry = feast_server_core::registry::get_registry(
@@ -82,21 +79,16 @@ async fn main() -> Result<()> {
                 repo_config.provider.clone(),
                 repo_config.project.clone(),
                 Some(cwd_str),
-                rodeo.clone(),
             )
             .await?;
             let online_store = feast_server_core::onlinestore::get_online_store(
                 &repo_config.online_store,
                 &repo_config.project,
                 Some(cwd_str),
-                rodeo.clone(),
             )
             .await?;
-            let feature_store = feast_server_core::feature_store::FeatureStore::new(
-                registry,
-                online_store,
-                rodeo.clone(),
-            );
+            let feature_store =
+                feast_server_core::feature_store::FeatureStore::new(registry, online_store);
             match r#type {
                 cli_options::ServeType::Http => {
                     let server_config = rest_server::server::ServerConfig {

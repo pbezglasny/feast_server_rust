@@ -1,11 +1,12 @@
 use crate::config::{OnlineStoreConfig, RedisType};
 use crate::feast::types::Value as FeastValue;
+use crate::intern;
 use crate::model::{Feature, HashEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use lasso::{Spur, ThreadedRodeo};
+use lasso::Spur;
 use prost::Message;
 use prost_types::Timestamp;
 use redis::aio::{ConnectionLike, ConnectionManager, MultiplexedConnection};
@@ -25,7 +26,8 @@ use smallvec::SmallVec;
 use std::hash::Hash;
 use std::sync::Arc;
 
-fn feature_redis_key(feature: &Feature, rodeo: &Arc<ThreadedRodeo>) -> Result<Vec<u8>> {
+fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
+    let rodeo = intern::rodeo_ref();
     let feature_view_name = rodeo.resolve(&feature.feature_view_name);
     let feature_name = rodeo.resolve(&feature.feature_name);
     let mut key_bytes: SmallVec<[u8; 64]> =
@@ -79,13 +81,11 @@ trait GetConnection {
 trait RedisStore {
     fn get_connection(&self) -> impl ConnectionLike + Send + Sync;
     fn get_project(&self) -> &str;
-    fn get_rodeo(&self) -> &Arc<ThreadedRodeo>;
 }
 
 pub(crate) struct RedisSingleNodeOnlineStore {
     project: String,
     connection_manager: ConnectionManager,
-    rodeo: Arc<ThreadedRodeo>,
 }
 
 impl RedisStore for RedisSingleNodeOnlineStore {
@@ -96,16 +96,11 @@ impl RedisStore for RedisSingleNodeOnlineStore {
     fn get_project(&self) -> &str {
         &self.project
     }
-
-    fn get_rodeo(&self) -> &Arc<ThreadedRodeo> {
-        &self.rodeo
-    }
 }
 
 pub(crate) struct RedisClusterOnlineStore {
     project: String,
     cluster_connection: ClusterConnection,
-    rodeo: Arc<ThreadedRodeo>,
 }
 
 impl RedisStore for RedisClusterOnlineStore {
@@ -115,10 +110,6 @@ impl RedisStore for RedisClusterOnlineStore {
 
     fn get_project(&self) -> &str {
         &self.project
-    }
-
-    fn get_rodeo(&self) -> &Arc<ThreadedRodeo> {
-        &self.rodeo
     }
 }
 
@@ -130,7 +121,6 @@ struct RedisSentinelOnlineStore {
     project: String,
     _client: SentinelClient,
     connection_pool: MultiplexedConnection,
-    rodeo: Arc<ThreadedRodeo>,
 }
 
 // TODO: Implement reconnection logic for Sentinel connections
@@ -141,10 +131,6 @@ impl RedisStore for RedisSentinelOnlineStore {
 
     fn get_project(&self) -> &str {
         &self.project
-    }
-
-    fn get_rodeo(&self) -> &Arc<ThreadedRodeo> {
-        &self.rodeo
     }
 }
 
@@ -413,7 +399,6 @@ pub async fn new(
     redis_type: RedisType,
     connection_string: String,
     sentinel_master: Option<String>,
-    rodeo: Arc<ThreadedRodeo>,
 ) -> Result<Arc<dyn OnlineStore>> {
     let connection_option = parse_redis_connection_string(&connection_string)?;
     match redis_type {
@@ -435,7 +420,6 @@ pub async fn new(
             Ok(Arc::new(RedisSingleNodeOnlineStore {
                 project,
                 connection_manager: connection_pool,
-                rodeo,
             }))
         }
         RedisType::RedisCluster => {
@@ -448,7 +432,6 @@ pub async fn new(
             Ok(Arc::new(RedisClusterOnlineStore {
                 project,
                 cluster_connection: connection_pool,
-                rodeo,
             }))
         }
         RedisType::Sentinel => {
@@ -472,7 +455,6 @@ pub async fn new(
                 project,
                 _client: sentinel_client,
                 connection_pool: sentinel_connection,
-                rodeo,
             }))
         }
     }
@@ -480,23 +462,13 @@ pub async fn new(
 pub async fn from_config(
     project: String,
     config: OnlineStoreConfig,
-    rodeo: Arc<ThreadedRodeo>,
 ) -> Result<Arc<dyn OnlineStore>> {
     match config {
         OnlineStoreConfig::Redis {
             redis_type,
             connection_string,
             sentinel_master,
-        } => {
-            new(
-                project,
-                redis_type,
-                connection_string,
-                sentinel_master,
-                rodeo,
-            )
-            .await
-        }
+        } => new(project, redis_type, connection_string, sentinel_master).await,
         _ => Err(anyhow!("Invalid config for RedisOnlineStore")),
     }
 }
@@ -528,6 +500,7 @@ where
         let mut pipeline = redis::pipe();
 
         let project_name = self.get_project();
+        let rodeo = intern::rodeo_ref();
         for (key, feature_vec) in features.iter() {
             let mut seen_views: HashSet<Spur> = HashSet::default();
             let mut feature_keys: Vec<Vec<u8>> = vec![];
@@ -537,18 +510,18 @@ where
             )?;
             hset_entity_key.extend_from_slice(project_name.as_bytes());
             for feature in feature_vec {
-                let view_name = feature.feature_view_name.clone();
-                let feature_name = feature.feature_name.clone();
+                let view_name = feature.feature_view_name;
+                let feature_name = feature.feature_name;
                 if !seen_views.contains(&view_name) {
                     seen_views.insert(view_name);
-                    let view_name_str = self.get_rodeo().resolve(&view_name);
+                    let view_name_str = rodeo.resolve(&view_name);
                     feature_keys.push(["_ts:", view_name_str].concat().as_bytes().to_vec());
                     entities.push(RedisRequest::TimestampRow {
                         entity_key: key,
-                        feature_view_name: view_name.clone(),
+                        feature_view_name: view_name,
                     });
                 }
-                feature_keys.push(feature_redis_key(feature, self.get_rodeo())?);
+                feature_keys.push(feature_redis_key(feature)?);
                 entities.push(RedisRequest::FeatureRow {
                     feature_view_name: view_name,
                     entity_key: key,
@@ -589,8 +562,8 @@ where
                         Some(bytes) => FeastValue::decode(bytes.as_slice()).with_context(|| {
                             format!(
                                 "Failed to decode value for feature {}:{} from bytes: {:?}",
-                                self.get_rodeo().resolve(&feature_view_name),
-                                self.get_rodeo().resolve(&feature_name),
+                                rodeo.resolve(&feature_view_name),
+                                rodeo.resolve(&feature_name),
                                 bytes
                             )
                         })?,
@@ -615,7 +588,7 @@ where
                                 .with_context(|| {
                                     format!(
                                         "Failed to decode timestamp for feature view {}",
-                                        self.get_rodeo().resolve(&feature_view_name)
+                                        rodeo.resolve(&feature_view_name)
                                     )
                                 })?;
                             DateTime::<Utc>::from_timestamp(
@@ -674,8 +647,8 @@ mod tests {
                 }],
             })),
             vec![
-                Feature::new("driver_hourly_stats", "conv_rate"),
-                Feature::new("driver_hourly_stats", "acc_rate"),
+                Feature::from_names("driver_hourly_stats", "conv_rate"),
+                Feature::from_names("driver_hourly_stats", "acc_rate"),
             ],
         )]);
 

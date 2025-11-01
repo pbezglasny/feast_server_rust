@@ -13,7 +13,7 @@ use crate::util::prost_timestamp_to_datetime;
 use anyhow::{Context, Result};
 use anyhow::{Error, anyhow};
 use chrono::{DateTime, Duration, Utc};
-use lasso::{Interner, Spur, ThreadedRodeo};
+use lasso::{Interner, Spur};
 use prost::Message;
 use rustc_hash::FxHashMap as HashMap;
 use serde::ser::Error as SerdeError;
@@ -173,6 +173,16 @@ pub struct Field {
     pub value_type: ValueTypeEnum,
 }
 
+impl Field {
+    pub fn new(name: impl AsRef<str>, value_type: ValueTypeEnum) -> Self {
+        let rodeo = crate::intern::rodeo_ref();
+        Self {
+            name: rodeo.get_or_intern(name.as_ref()),
+            value_type,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FeatureProjection {
     pub feature_view_name: Spur,
@@ -186,17 +196,6 @@ pub struct ResolvedFeatureProjection {
     pub feature_view: Arc<FeatureView>,
 }
 
-/*impl Default for FeatureProjection {
-    fn default() -> Self {
-        Self {
-            feature_view_name: Arc::<str>::from(""),
-            feature_view_name_alias: None,
-            features: Vec::new(),
-            join_key_map: HashMap::default(),
-        }
-    }
-}*/
-
 #[derive(Debug, Clone)]
 pub struct FeatureView {
     pub name: Spur,
@@ -207,18 +206,38 @@ pub struct FeatureView {
     pub join_key_map: Option<HashMap<Spur, Spur>>,
 }
 
-/*impl Default for FeatureView {
+impl Default for FeatureView {
     fn default() -> Self {
         Self {
-            name: Arc::<str>::from(""),
-            features: Arc::from(Vec::new()),
+            name: crate::intern::rodeo_ref().get_or_intern(""),
+            features: Arc::new(Vec::new()),
             ttl: Duration::zero(),
             entity_names: Vec::new(),
             entity_columns: Vec::new(),
             join_key_map: None,
         }
     }
-}*/
+}
+
+impl FeatureView {
+    pub fn new(
+        name: impl AsRef<str>,
+        features: Vec<Field>,
+        ttl: Duration,
+        entity_names: Vec<Spur>,
+        entity_columns: Vec<Field>,
+        join_key_map: Option<HashMap<Spur, Spur>>,
+    ) -> Self {
+        Self {
+            name: crate::intern::rodeo_ref().get_or_intern(name.as_ref()),
+            features: Arc::new(features),
+            ttl,
+            entity_names,
+            entity_columns,
+            join_key_map,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct OnDemandFeatureView {
@@ -423,7 +442,16 @@ impl Feature {
         }
     }
 
-    pub fn full_name(&self, rodeo: Arc<ThreadedRodeo>) -> String {
+    pub fn from_names(feature_view_name: &str, feature_name: &str) -> Self {
+        let rodeo = crate::intern::rodeo_ref();
+        Self::new(
+            rodeo.get_or_intern(feature_view_name),
+            rodeo.get_or_intern(feature_name),
+        )
+    }
+
+    pub fn full_name(&self) -> String {
+        let rodeo = crate::intern::rodeo_ref();
         format!(
             "{}__{}",
             rodeo.resolve(&self.feature_view_name),
@@ -452,11 +480,11 @@ impl<'a> Hash for RequestedFeatureWithTTL<'a> {
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, &str)> for Feature {
+impl TryFrom<&str> for Feature {
     type Error = Error;
 
-    fn try_from(value: (Arc<ThreadedRodeo>, &str)) -> Result<Self> {
-        let (rodeo, s) = value;
+    fn try_from(s: &str) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         if s.is_empty() {
             return Err(anyhow!("Empty feature string"));
         }
@@ -473,19 +501,19 @@ impl TryFrom<(Arc<ThreadedRodeo>, &str)> for Feature {
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, &Spur)> for Feature {
+impl TryFrom<&Spur> for Feature {
     type Error = Error;
 
-    fn try_from(value: (Arc<ThreadedRodeo>, &Spur)) -> Result<Self> {
-        let (rodeo, feature_spur) = value;
+    fn try_from(feature_spur: &Spur) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let feature_str = rodeo.resolve(feature_spur);
-        Feature::try_from((rodeo.clone(), feature_str))
+        Feature::try_from(feature_str)
     }
 }
 
-impl From<(Arc<ThreadedRodeo>, &GetOnlineFeaturesRequest)> for RequestedFeatures {
-    fn from(value: (Arc<ThreadedRodeo>, &GetOnlineFeaturesRequest)) -> Self {
-        let (rodeo, get_online_feature_request) = value;
+impl From<&GetOnlineFeaturesRequest> for RequestedFeatures {
+    fn from(get_online_feature_request: &GetOnlineFeaturesRequest) -> Self {
+        let rodeo = crate::intern::rodeo_ref();
         if let Some(feature_service) = &get_online_feature_request.feature_service {
             RequestedFeatures::FeatureService(rodeo.get_or_intern(feature_service))
         } else if let Some(features) = &get_online_feature_request.features {
@@ -501,11 +529,11 @@ impl From<(Arc<ThreadedRodeo>, &GetOnlineFeaturesRequest)> for RequestedFeatures
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, EntityProto)> for Entity {
+impl TryFrom<EntityProto> for Entity {
     type Error = Error;
 
-    fn try_from(value: (Arc<ThreadedRodeo>, EntityProto)) -> Result<Self> {
-        let (rodeo, entity_proto) = value;
+    fn try_from(entity_proto: EntityProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let specs = entity_proto.spec.ok_or(anyhow!("Missing entity specs"))?;
         let value_type = ValueTypeEnum::try_from(specs.value_type).map_err(|e| {
             anyhow!(
@@ -523,11 +551,11 @@ impl TryFrom<(Arc<ThreadedRodeo>, EntityProto)> for Entity {
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, FeatureSpecV2Proto)> for Field {
+impl TryFrom<FeatureSpecV2Proto> for Field {
     type Error = Error;
 
-    fn try_from(value: (Arc<ThreadedRodeo>, FeatureSpecV2Proto)) -> Result<Self> {
-        let (rodeo, feature_spec_proto) = value;
+    fn try_from(feature_spec_proto: FeatureSpecV2Proto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let value_type = ValueTypeEnum::try_from(feature_spec_proto.value_type).map_err(|e| {
             anyhow!(
                 "Invalid value type {} for feature {}: {}",
@@ -541,14 +569,14 @@ impl TryFrom<(Arc<ThreadedRodeo>, FeatureSpecV2Proto)> for Field {
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, FeatureViewProjectionProto)> for FeatureProjection {
+impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
     type Error = Error;
-    fn try_from(value: (Arc<ThreadedRodeo>, FeatureViewProjectionProto)) -> Result<Self> {
-        let (rodeo, projection_proto) = value;
+    fn try_from(projection_proto: FeatureViewProjectionProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let features: Result<Vec<Field>> = projection_proto
             .feature_columns
             .into_iter()
-            .map(|feature_col| Field::try_from((rodeo.clone(), feature_col)))
+            .map(Field::try_from)
             .collect();
         Ok(FeatureProjection {
             feature_view_name: rodeo.get_or_intern(projection_proto.feature_view_name),
@@ -566,24 +594,21 @@ impl TryFrom<(Arc<ThreadedRodeo>, FeatureViewProjectionProto)> for FeatureProjec
 }
 
 impl FeatureView {
-    pub fn is_entity_less(&self, rodeo: Arc<ThreadedRodeo>) -> bool {
+    pub fn is_entity_less(&self) -> bool {
+        let rodeo = crate::intern::rodeo_ref();
         self.entity_names.len() == 1
             && self.entity_names[0] == rodeo.get_or_intern(DUMMY_ENTITY_NAME)
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, FeatureViewProto)> for FeatureView {
+impl TryFrom<FeatureViewProto> for FeatureView {
     type Error = Error;
-    fn try_from(value: (Arc<ThreadedRodeo>, FeatureViewProto)) -> Result<Self> {
-        let (rodeo, feature_view_proto) = value;
+    fn try_from(feature_view_proto: FeatureViewProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let spec = feature_view_proto
             .spec
             .ok_or(anyhow!("Missing feature view value"))?;
-        let features: Result<Vec<Field>> = spec
-            .features
-            .into_iter()
-            .map(|feature| Field::try_from((rodeo.clone(), feature)))
-            .collect();
+        let features: Result<Vec<Field>> = spec.features.into_iter().map(Field::try_from).collect();
         Ok(FeatureView {
             name: rodeo.get_or_intern(spec.name),
             features: Arc::from(features?),
@@ -610,10 +635,10 @@ impl TryFrom<(Arc<ThreadedRodeo>, FeatureViewProto)> for FeatureView {
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, OnDemandFeatureViewProto)> for OnDemandFeatureView {
+impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
     type Error = Error;
-    fn try_from(value: (Arc<ThreadedRodeo>, OnDemandFeatureViewProto)) -> Result<Self> {
-        let (rodeo, odfv_proto) = value;
+    fn try_from(odfv_proto: OnDemandFeatureViewProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let spec = odfv_proto
             .spec
             .ok_or(anyhow!("Missing on-demand feature view specs"))?;
@@ -624,10 +649,10 @@ impl TryFrom<(Arc<ThreadedRodeo>, OnDemandFeatureViewProto)> for OnDemandFeature
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, FeatureServiceProto)> for FeatureService {
+impl TryFrom<FeatureServiceProto> for FeatureService {
     type Error = Error;
-    fn try_from(feature_service_proto: (Arc<ThreadedRodeo>, FeatureServiceProto)) -> Result<Self> {
-        let (rodeo, feature_service_proto) = feature_service_proto;
+    fn try_from(feature_service_proto: FeatureServiceProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let spec = feature_service_proto
             .spec
             .ok_or(anyhow!("Missing feature service specs"))?;
@@ -637,7 +662,7 @@ impl TryFrom<(Arc<ThreadedRodeo>, FeatureServiceProto)> for FeatureService {
         let projections: Result<Vec<FeatureProjection>> = spec
             .features
             .into_iter()
-            .map(|feature| FeatureProjection::try_from((rodeo.clone(), feature)))
+            .map(FeatureProjection::try_from)
             .collect();
         Ok(FeatureService {
             name: rodeo.get_or_intern(spec.name),
@@ -656,15 +681,15 @@ impl TryFrom<(Arc<ThreadedRodeo>, FeatureServiceProto)> for FeatureService {
     }
 }
 
-impl TryFrom<(Arc<ThreadedRodeo>, RegistryProto)> for FeatureRegistry {
+impl TryFrom<RegistryProto> for FeatureRegistry {
     type Error = Error;
-    fn try_from(registry_proto: (Arc<ThreadedRodeo>, RegistryProto)) -> Result<Self> {
-        let (rodeo, registry_proto) = registry_proto;
+    fn try_from(registry_proto: RegistryProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let entities: Result<HashMap<Spur, Entity>> = registry_proto
             .entities
             .into_iter()
             .map(|e| {
-                let entity = Entity::try_from((rodeo.clone(), e))?;
+                let entity = Entity::try_from(e)?;
                 Ok((entity.name, entity))
             })
             .collect();
@@ -672,7 +697,7 @@ impl TryFrom<(Arc<ThreadedRodeo>, RegistryProto)> for FeatureRegistry {
             .feature_views
             .into_iter()
             .map(|fv| {
-                let feature_view = FeatureView::try_from((rodeo.clone(), fv))?;
+                let feature_view = FeatureView::try_from(fv)?;
                 Ok((feature_view.name, feature_view))
             })
             .collect();
@@ -680,16 +705,16 @@ impl TryFrom<(Arc<ThreadedRodeo>, RegistryProto)> for FeatureRegistry {
             .on_demand_feature_views
             .into_iter()
             .map(|odfv| {
-                let on_demand_feature_view = OnDemandFeatureView::try_from((rodeo.clone(), odfv))?;
-                Ok((on_demand_feature_view.name.clone(), on_demand_feature_view))
+                let on_demand_feature_view = OnDemandFeatureView::try_from(odfv)?;
+                Ok((on_demand_feature_view.name, on_demand_feature_view))
             })
             .collect();
         let feature_services: Result<HashMap<Spur, FeatureService>> = registry_proto
             .feature_services
             .into_iter()
             .map(|fs| {
-                let feature_service = FeatureService::try_from((rodeo.clone(), fs))?;
-                Ok((feature_service.name.clone(), feature_service))
+                let feature_service = FeatureService::try_from(fs)?;
+                Ok((feature_service.name, feature_service))
             })
             .collect();
         let mut registry = FeatureRegistry {
@@ -705,13 +730,12 @@ impl TryFrom<(Arc<ThreadedRodeo>, RegistryProto)> for FeatureRegistry {
 
 macro_rules! try_from_vec_u8 {
     ($target_type:ty, $proto_type:ty) => {
-        impl TryFrom<(Arc<ThreadedRodeo>, Vec<u8>)> for $target_type {
+        impl TryFrom<Vec<u8>> for $target_type {
             type Error = Error;
 
-            fn try_from(value: (Arc<ThreadedRodeo>, Vec<u8>)) -> Result<Self> {
-                let (rodeo, val) = value;
+            fn try_from(val: Vec<u8>) -> Result<Self> {
                 let proto = <$proto_type>::decode(val.as_slice())?;
-                <$target_type>::try_from((rodeo, proto))
+                <$target_type>::try_from(proto)
             }
         }
     };

@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 pub mod feature_store;
+pub mod intern;
 mod key_serialization;
 pub mod model;
 mod util;

@@ -1,5 +1,6 @@
 use crate::config::EntityKeySerializationVersion;
 use crate::feast::types::{EntityKey, Value};
+use crate::intern;
 use crate::key_serialization::deserialize_key;
 use crate::key_serialization::serialize_key;
 use crate::model::{Feature, HashEntityKey};
@@ -7,7 +8,7 @@ use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use lasso::{Spur, ThreadedRodeo};
+use lasso::Spur;
 use prost::Message;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
@@ -45,11 +46,7 @@ pub struct SqliteStoreRow {
 }
 
 impl SqliteStoreRow {
-    fn try_into_online_store_row(
-        self,
-        feature_view_name: Spur,
-        rodeo: Arc<ThreadedRodeo>,
-    ) -> Result<OnlineStoreRow> {
+    fn try_into_online_store_row(self, feature_view_name: Spur) -> Result<OnlineStoreRow> {
         let Self {
             entity_key,
             feature_name,
@@ -57,6 +54,7 @@ impl SqliteStoreRow {
             event_ts,
             created_ts,
         } = self;
+        let rodeo = intern::rodeo_ref();
 
         let decoded_value = Value::decode(value.as_slice()).with_context(|| {
             format!(
@@ -105,7 +103,6 @@ impl FromRow<'_, SqliteRow> for SqliteStoreRow {
 pub struct SqliteOnlineStore {
     project: String,
     connection_pool: Pool<Sqlite>,
-    rodeo: Arc<ThreadedRodeo>,
 }
 
 #[async_trait]
@@ -125,7 +122,7 @@ impl OnlineStore for SqliteOnlineStore {
                     feature_name,
                 } = feature;
                 view_features
-                    .entry(feature_view_name.clone())
+                    .entry(feature_view_name)
                     .or_default()
                     .insert(feature_name);
 
@@ -144,9 +141,9 @@ impl OnlineStore for SqliteOnlineStore {
             }
 
             let mut connection = self.connection_pool.acquire().await?;
-            let table_name = format!("{}_{}", self.project, self.rodeo.resolve(&view_name));
+            let rodeo = intern::rodeo_ref();
+            let table_name = format!("{}_{}", self.project, rodeo.resolve(&view_name));
 
-            let rodeo = self.rodeo.clone();
             join_set.spawn(async move {
                 let entity_keys_parameters =
                     format!("?{}", ", ?".repeat(serialized_keys.len() - 1));
@@ -166,9 +163,7 @@ impl OnlineStore for SqliteOnlineStore {
                 match sqlx_query.fetch_all(&mut *connection).await {
                     Ok(rows) => rows
                         .into_iter()
-                        .map(|r: SqliteStoreRow| {
-                            r.try_into_online_store_row(view_name, rodeo.clone())
-                        })
+                        .map(|r: SqliteStoreRow| r.try_into_online_store_row(view_name))
                         .collect::<Result<Vec<_>>>(),
                     Err(sqlx::Error::Database(db_err))
                         if db_err.message().contains("no such table") =>
@@ -208,7 +203,6 @@ impl SqliteOnlineStore {
         path: &str,
         project: String,
         connection_options: ConnectionOptions,
-        rodeo: Arc<ThreadedRodeo>,
     ) -> Result<Self> {
         let pool = SqlitePoolOptions::new()
             .max_connections(connection_options.max_connections)
@@ -231,7 +225,6 @@ impl SqliteOnlineStore {
         Ok(Self {
             project,
             connection_pool: pool,
-            rodeo,
         })
     }
 }
@@ -256,7 +249,7 @@ mod test {
 
         let arg: HashMap<HashEntityKey, Vec<Feature>> = HashMap::from_iter([(
             HashEntityKey(entity_key),
-            vec![Feature::new("driver_hourly_stats", "conv_rate")],
+            vec![Feature::from_names("driver_hourly_stats", "conv_rate")],
         )]);
 
         let sqlite_store = SqliteOnlineStore::from_options(
