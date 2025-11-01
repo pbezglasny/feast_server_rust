@@ -71,13 +71,9 @@ fn parse_redis_connection_string(connection_string: &str) -> Result<RedisConnect
     Ok(result)
 }
 
-/// GetConnection and GetProject traits to abstract connection and project retrieval
+/// RedisStore trait to abstract connection and project retrieval
 /// Client and connection types differ between single-node and cluster Redis,
 /// so these traits help unify the interface for OnlineStore implementations.
-trait GetConnection {
-    fn get_connection(&self) -> impl ConnectionLike + Send + Sync;
-}
-
 trait RedisStore {
     fn get_connection(&self) -> impl ConnectionLike + Send + Sync;
     fn get_project(&self) -> &str;
