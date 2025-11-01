@@ -1,15 +1,14 @@
 use crate::config::RegistryConfig;
-use crate::model::{
-    Entity, FeatureRegistry, FeatureService, FeatureView, GetOnlineFeaturesRequest,
-};
+use crate::intern;
+use crate::model::{Entity, FeatureRegistry, FeatureService, FeatureView};
 use crate::registry::{FeatureRegistryService, FileFeatureRegistry};
 use anyhow::{Result, anyhow};
+use lasso::Spur;
 use rustc_hash::FxHashMap as HashMap;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Acquire, Database, Executor, Pool, Postgres};
 use std::str::FromStr;
-use std::sync::Arc;
 
 const FEAST_SQL_REGISTRY_MAX_CONNECTIONS_ENV_VAR: &str = "FEAST_SQL_REGISTRY_MAX_CONNECTIONS";
 const DEFAULT_MAX_CONNECTIONS: u32 = 5;
@@ -125,7 +124,7 @@ impl SqlFeatureRegistry {
             name_col: &'a str,
             proto_col: &'a str,
             type_name: &'a str,
-        ) -> Result<HashMap<String, T>>
+        ) -> Result<HashMap<Spur, T>>
         where
             T: TryFrom<Vec<u8>, Error = anyhow::Error>,
         {
@@ -138,6 +137,7 @@ impl SqlFeatureRegistry {
                 .fetch_all(conn)
                 .await?;
 
+            let rodeo = intern::rodeo_ref();
             rows.into_iter()
                 .map(|(name, proto)| {
                     T::try_from(proto)
@@ -149,7 +149,7 @@ impl SqlFeatureRegistry {
                                 e
                             )
                         })
-                        .map(|item| (name, item))
+                        .map(|item| (rodeo.get_or_intern(name), item))
                 })
                 .collect::<Result<HashMap<_, _>>>()
         }

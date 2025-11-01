@@ -8,11 +8,13 @@ use crate::feast::core::Registry as RegistryProto;
 use crate::feast::types::value::Val;
 use crate::feast::types::value_type::Enum as ValueTypeEnum;
 use crate::feast::types::{EntityKey, Value, value_type};
+use crate::intern::rodeo;
 use crate::util::prost_duration_to_duration;
 use crate::util::prost_timestamp_to_datetime;
 use anyhow::{Context, Result};
 use anyhow::{Error, anyhow};
 use chrono::{DateTime, Duration, Utc};
+use lasso::{Interner, Spur};
 use prost::Message;
 use rustc_hash::FxHashMap as HashMap;
 use serde::ser::Error as SerdeError;
@@ -58,7 +60,7 @@ impl EntityIdValue {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GetOnlineFeaturesRequest {
-    pub entities: HashMap<Arc<str>, Vec<EntityIdValue>>,
+    pub entities: HashMap<String, Vec<EntityIdValue>>,
     pub feature_service: Option<String>,
     pub features: Option<Vec<String>>,
     pub full_feature_names: Option<bool>,
@@ -66,7 +68,7 @@ pub struct GetOnlineFeaturesRequest {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GetOnlineFeatureResponseMetadata {
-    pub feature_names: Vec<Arc<str>>,
+    pub feature_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,8 +143,8 @@ pub struct GetOnlineFeatureResponse {
 
 #[derive(Debug, Clone)]
 pub struct Entity {
-    pub name: String,
-    pub join_key: String,
+    pub name: Spur,
+    pub join_key: Spur,
     pub value_type: ValueTypeEnum,
 }
 
@@ -168,16 +170,26 @@ impl<'de> Deserialize<'de> for ValueTypeEnum {
 
 #[derive(Debug, Clone, Default)]
 pub struct Field {
-    pub name: Arc<str>,
+    pub name: Spur,
     pub value_type: ValueTypeEnum,
+}
+
+impl Field {
+    pub fn new(name: impl AsRef<str>, value_type: ValueTypeEnum) -> Self {
+        let rodeo = crate::intern::rodeo_ref();
+        Self {
+            name: rodeo.get_or_intern(name.as_ref()),
+            value_type,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct FeatureProjection {
-    pub feature_view_name: Arc<str>,
-    pub feature_view_name_alias: Option<Arc<str>>,
+    pub feature_view_name: Spur,
+    pub feature_view_name_alias: Option<Spur>,
     pub features: Vec<Field>,
-    pub join_key_map: HashMap<Arc<str>, Arc<str>>,
+    pub join_key_map: HashMap<Spur, Spur>,
 }
 
 #[derive(Debug, Clone)]
@@ -185,32 +197,21 @@ pub struct ResolvedFeatureProjection {
     pub feature_view: Arc<FeatureView>,
 }
 
-impl Default for FeatureProjection {
-    fn default() -> Self {
-        Self {
-            feature_view_name: Arc::<str>::from(""),
-            feature_view_name_alias: None,
-            features: Vec::new(),
-            join_key_map: HashMap::default(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct FeatureView {
-    pub name: Arc<str>,
+    pub name: Spur,
     pub features: Arc<Vec<Field>>,
     pub ttl: Duration,
-    pub entity_names: Vec<Arc<str>>,
+    pub entity_names: Vec<Spur>,
     pub entity_columns: Vec<Field>,
-    pub join_key_map: Option<HashMap<Arc<str>, Arc<str>>>,
+    pub join_key_map: Option<HashMap<Spur, Spur>>,
 }
 
 impl Default for FeatureView {
     fn default() -> Self {
         Self {
-            name: Arc::<str>::from(""),
-            features: Arc::from(Vec::new()),
+            name: crate::intern::rodeo_ref().get_or_intern(""),
+            features: Arc::new(Vec::new()),
             ttl: Duration::zero(),
             entity_names: Vec::new(),
             entity_columns: Vec::new(),
@@ -219,9 +220,29 @@ impl Default for FeatureView {
     }
 }
 
+impl FeatureView {
+    pub fn new(
+        name: impl AsRef<str>,
+        features: Vec<Field>,
+        ttl: Duration,
+        entity_names: Vec<Spur>,
+        entity_columns: Vec<Field>,
+        join_key_map: Option<HashMap<Spur, Spur>>,
+    ) -> Self {
+        Self {
+            name: crate::intern::rodeo_ref().get_or_intern(name.as_ref()),
+            features: Arc::new(features),
+            ttl,
+            entity_names,
+            entity_columns,
+            join_key_map,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct OnDemandFeatureView {
-    pub name: String,
+    pub name: Spur,
     pub project: String,
 }
 
@@ -232,31 +253,31 @@ pub struct LoggingConfig {
 
 #[derive(Debug, Clone, Default)]
 pub struct FeatureService {
-    pub name: String,
+    pub name: Spur,
     pub project: String,
     pub created_timestamp: Option<DateTime<Utc>>,
     pub last_updated_timestamp: Option<DateTime<Utc>>,
     pub projections: Vec<FeatureProjection>,
     pub resolved_projections: Vec<ResolvedFeatureProjection>,
-    pub missing_feature_views: Vec<String>,
+    pub missing_feature_views: Vec<Spur>,
     pub logging_config: Option<LoggingConfig>,
 }
 
 // todo make fields private and add getters
 #[derive(Debug, Clone, Default)]
 pub struct FeatureRegistry {
-    pub entities: HashMap<String, Entity>,
-    pub feature_views: HashMap<String, FeatureView>,
-    pub on_demand_feature_views: HashMap<String, OnDemandFeatureView>,
-    pub feature_services: HashMap<String, FeatureService>,
+    pub entities: HashMap<Spur, Entity>,
+    pub feature_views: HashMap<Spur, FeatureView>,
+    pub on_demand_feature_views: HashMap<Spur, OnDemandFeatureView>,
+    pub feature_services: HashMap<Spur, FeatureService>,
 }
 
 impl FeatureRegistry {
     pub fn new(
-        entities: HashMap<String, Entity>,
-        feature_views: HashMap<String, FeatureView>,
-        on_demand_feature_views: HashMap<String, OnDemandFeatureView>,
-        feature_services: HashMap<String, FeatureService>,
+        entities: HashMap<Spur, Entity>,
+        feature_views: HashMap<Spur, FeatureView>,
+        on_demand_feature_views: HashMap<Spur, OnDemandFeatureView>,
+        feature_services: HashMap<Spur, FeatureService>,
     ) -> Self {
         let mut registry = FeatureRegistry {
             entities,
@@ -272,10 +293,7 @@ impl FeatureRegistry {
         for feature_service in self.feature_services.values_mut() {
             let mut resolved_projections = Vec::new();
             for projection in &feature_service.projections {
-                if let Some(view) = self
-                    .feature_views
-                    .get(projection.feature_view_name.as_ref())
-                {
+                if let Some(view) = self.feature_views.get(&projection.feature_view_name) {
                     let mut resolved_feature_view = view.clone();
                     resolved_feature_view.join_key_map = Some(projection.join_key_map.clone());
                     resolved_feature_view.features = Arc::new(projection.features.clone());
@@ -286,7 +304,7 @@ impl FeatureRegistry {
                 } else {
                     feature_service
                         .missing_feature_views
-                        .push(projection.feature_view_name.as_ref().to_string());
+                        .push(projection.feature_view_name);
                 }
             }
             feature_service.resolved_projections = resolved_projections;
@@ -295,9 +313,9 @@ impl FeatureRegistry {
 }
 
 #[derive(Debug, Clone)]
-pub enum RequestedFeatures<'a> {
-    FeatureNames(&'a [String]),
-    FeatureService(&'a str),
+pub enum RequestedFeatures {
+    FeatureNames(Vec<Spur>),
+    FeatureService(Spur),
 }
 
 /// Implement custom hashing for EntityKey to support using it as a key in HashMap,
@@ -407,8 +425,8 @@ impl Eq for HashEntityKey {}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Feature {
-    pub feature_view_name: Arc<str>,
-    pub feature_name: Arc<str>,
+    pub feature_view_name: Spur,
+    pub feature_name: Spur,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -418,22 +436,35 @@ pub enum FeatureType {
 }
 
 impl Feature {
-    pub fn new(feature_view_name: impl Into<Arc<str>>, feature_name: impl Into<Arc<str>>) -> Self {
+    pub fn new(feature_view_name: Spur, feature_name: Spur) -> Self {
         Self {
-            feature_view_name: feature_view_name.into(),
-            feature_name: feature_name.into(),
+            feature_view_name,
+            feature_name,
         }
     }
 
-    pub fn entity_feature(feature_name: impl Into<Arc<str>>) -> Self {
+    pub fn entity_feature(feature_name: Spur) -> Self {
         Self {
-            feature_view_name: Arc::<str>::from(""),
-            feature_name: feature_name.into(),
+            feature_view_name: rodeo().get_or_intern(""),
+            feature_name,
         }
+    }
+
+    pub fn from_names(feature_view_name: &str, feature_name: &str) -> Self {
+        let rodeo = crate::intern::rodeo_ref();
+        Self::new(
+            rodeo.get_or_intern(feature_view_name),
+            rodeo.get_or_intern(feature_name),
+        )
     }
 
     pub fn full_name(&self) -> String {
-        format!("{}__{}", self.feature_view_name, self.feature_name)
+        let rodeo = crate::intern::rodeo_ref();
+        format!(
+            "{}__{}",
+            rodeo.resolve(&self.feature_view_name),
+            rodeo.resolve(&self.feature_name)
+        )
     }
 }
 
@@ -461,26 +492,46 @@ impl TryFrom<&str> for Feature {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         if s.is_empty() {
             return Err(anyhow!("Empty feature string"));
         }
         if let Some(idx) = s.find(':') {
             let (fv_name, f_name) = s.split_at(idx);
-            Ok(Self::new(fv_name, &f_name[1..]))
+            Ok(Self::new(
+                rodeo.get_or_intern(fv_name),
+                rodeo.get_or_intern(&f_name[1..]),
+            ))
         } else {
-            Ok(Self::entity_feature(s))
+            Ok(Self::entity_feature(rodeo.get_or_intern(s)))
         }
     }
 }
 
-impl<'a> From<&'a GetOnlineFeaturesRequest> for RequestedFeatures<'a> {
-    fn from(get_online_feature_request: &'a GetOnlineFeaturesRequest) -> Self {
+impl TryFrom<&Spur> for Feature {
+    type Error = Error;
+
+    fn try_from(feature_spur: &Spur) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
+        let feature_str = rodeo.resolve(feature_spur);
+        Feature::try_from(feature_str)
+    }
+}
+
+impl From<&GetOnlineFeaturesRequest> for RequestedFeatures {
+    fn from(get_online_feature_request: &GetOnlineFeaturesRequest) -> Self {
+        let rodeo = crate::intern::rodeo_ref();
         if let Some(feature_service) = &get_online_feature_request.feature_service {
-            RequestedFeatures::FeatureService(feature_service)
+            RequestedFeatures::FeatureService(rodeo.get_or_intern(feature_service))
         } else if let Some(features) = &get_online_feature_request.features {
-            RequestedFeatures::FeatureNames(features)
+            RequestedFeatures::FeatureNames(
+                features
+                    .iter()
+                    .map(|feature| rodeo.get_or_intern(feature))
+                    .collect(),
+            )
         } else {
-            RequestedFeatures::FeatureNames(&[])
+            RequestedFeatures::FeatureNames(Vec::new())
         }
     }
 }
@@ -489,6 +540,7 @@ impl TryFrom<EntityProto> for Entity {
     type Error = Error;
 
     fn try_from(entity_proto: EntityProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let specs = entity_proto.spec.ok_or(anyhow!("Missing entity specs"))?;
         let value_type = ValueTypeEnum::try_from(specs.value_type).map_err(|e| {
             anyhow!(
@@ -499,8 +551,8 @@ impl TryFrom<EntityProto> for Entity {
             )
         })?;
         Ok(Entity {
-            name: specs.name,
-            join_key: specs.join_key,
+            name: rodeo.get_or_intern(specs.name),
+            join_key: rodeo.get_or_intern(specs.join_key),
             value_type,
         })
     }
@@ -510,6 +562,7 @@ impl TryFrom<FeatureSpecV2Proto> for Field {
     type Error = Error;
 
     fn try_from(feature_spec_proto: FeatureSpecV2Proto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let value_type = ValueTypeEnum::try_from(feature_spec_proto.value_type).map_err(|e| {
             anyhow!(
                 "Invalid value type {} for feature {}: {}",
@@ -518,29 +571,30 @@ impl TryFrom<FeatureSpecV2Proto> for Field {
                 e
             )
         })?;
-        Ok(Field {
-            name: Arc::from(feature_spec_proto.name),
-            value_type,
-        })
+        let name = rodeo.get_or_intern(&feature_spec_proto.name);
+        Ok(Field { name, value_type })
     }
 }
 
 impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
     type Error = Error;
     fn try_from(projection_proto: FeatureViewProjectionProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let features: Result<Vec<Field>> = projection_proto
             .feature_columns
             .into_iter()
             .map(Field::try_from)
             .collect();
         Ok(FeatureProjection {
-            feature_view_name: projection_proto.feature_view_name.into(),
-            feature_view_name_alias: Some(projection_proto.feature_view_name_alias.into()),
+            feature_view_name: rodeo.get_or_intern(projection_proto.feature_view_name),
+            feature_view_name_alias: Some(
+                rodeo.get_or_intern(projection_proto.feature_view_name_alias),
+            ),
             features: features?,
             join_key_map: projection_proto
                 .join_key_map
                 .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
+                .map(|(k, v)| (rodeo.get_or_intern(k), rodeo.get_or_intern(v)))
                 .collect(),
         })
     }
@@ -548,31 +602,38 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
 
 impl FeatureView {
     pub fn is_entity_less(&self) -> bool {
-        self.entity_names.len() == 1 && self.entity_names[0] == DUMMY_ENTITY_NAME.into()
+        let rodeo = crate::intern::rodeo_ref();
+        self.entity_names.len() == 1
+            && self.entity_names[0] == rodeo.get_or_intern(DUMMY_ENTITY_NAME)
     }
 }
 
 impl TryFrom<FeatureViewProto> for FeatureView {
     type Error = Error;
     fn try_from(feature_view_proto: FeatureViewProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let spec = feature_view_proto
             .spec
             .ok_or(anyhow!("Missing feature view value"))?;
         let features: Result<Vec<Field>> = spec.features.into_iter().map(Field::try_from).collect();
         Ok(FeatureView {
-            name: spec.name.into(),
+            name: rodeo.get_or_intern(spec.name),
             features: Arc::from(features?),
             ttl: spec
                 .ttl
                 .as_ref()
                 .map(prost_duration_to_duration)
                 .unwrap_or_else(Duration::zero),
-            entity_names: spec.entities.into_iter().map(Arc::<str>::from).collect(),
+            entity_names: spec
+                .entities
+                .into_iter()
+                .map(|entity| rodeo.get_or_intern(entity))
+                .collect(),
             entity_columns: spec
                 .entity_columns
                 .into_iter()
                 .map(|col| Field {
-                    name: col.name.into(),
+                    name: rodeo.get_or_intern(col.name),
                     value_type: ValueTypeEnum::try_from(col.value_type).unwrap(),
                 })
                 .collect(),
@@ -584,11 +645,12 @@ impl TryFrom<FeatureViewProto> for FeatureView {
 impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
     type Error = Error;
     fn try_from(odfv_proto: OnDemandFeatureViewProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let spec = odfv_proto
             .spec
             .ok_or(anyhow!("Missing on-demand feature view specs"))?;
         Ok(OnDemandFeatureView {
-            name: spec.name,
+            name: rodeo.get_or_intern(spec.name),
             project: spec.project,
         })
     }
@@ -597,6 +659,7 @@ impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
 impl TryFrom<FeatureServiceProto> for FeatureService {
     type Error = Error;
     fn try_from(feature_service_proto: FeatureServiceProto) -> Result<Self> {
+        let rodeo = crate::intern::rodeo_ref();
         let spec = feature_service_proto
             .spec
             .ok_or(anyhow!("Missing feature service specs"))?;
@@ -609,7 +672,7 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
             .map(FeatureProjection::try_from)
             .collect();
         Ok(FeatureService {
-            name: spec.name,
+            name: rodeo.get_or_intern(spec.name),
             project: spec.project,
             created_timestamp: metadata
                 .created_timestamp
@@ -628,36 +691,37 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
 impl TryFrom<RegistryProto> for FeatureRegistry {
     type Error = Error;
     fn try_from(registry_proto: RegistryProto) -> Result<Self> {
-        let entities: Result<HashMap<String, Entity>> = registry_proto
+        let rodeo = crate::intern::rodeo_ref();
+        let entities: Result<HashMap<Spur, Entity>> = registry_proto
             .entities
             .into_iter()
             .map(|e| {
                 let entity = Entity::try_from(e)?;
-                Ok((entity.name.clone(), entity))
+                Ok((entity.name, entity))
             })
             .collect();
-        let feature_views: Result<HashMap<String, FeatureView>> = registry_proto
+        let feature_views: Result<HashMap<Spur, FeatureView>> = registry_proto
             .feature_views
             .into_iter()
             .map(|fv| {
                 let feature_view = FeatureView::try_from(fv)?;
-                Ok((feature_view.name.as_ref().to_string(), feature_view))
+                Ok((feature_view.name, feature_view))
             })
             .collect();
-        let ondemand_feature_views: Result<HashMap<String, OnDemandFeatureView>> = registry_proto
+        let ondemand_feature_views: Result<HashMap<Spur, OnDemandFeatureView>> = registry_proto
             .on_demand_feature_views
             .into_iter()
             .map(|odfv| {
                 let on_demand_feature_view = OnDemandFeatureView::try_from(odfv)?;
-                Ok((on_demand_feature_view.name.clone(), on_demand_feature_view))
+                Ok((on_demand_feature_view.name, on_demand_feature_view))
             })
             .collect();
-        let feature_services: Result<HashMap<String, FeatureService>> = registry_proto
+        let feature_services: Result<HashMap<Spur, FeatureService>> = registry_proto
             .feature_services
             .into_iter()
             .map(|fs| {
                 let feature_service = FeatureService::try_from(fs)?;
-                Ok((feature_service.name.clone(), feature_service))
+                Ok((feature_service.name, feature_service))
             })
             .collect();
         let mut registry = FeatureRegistry {
@@ -676,8 +740,8 @@ macro_rules! try_from_vec_u8 {
         impl TryFrom<Vec<u8>> for $target_type {
             type Error = Error;
 
-            fn try_from(value: Vec<u8>) -> Result<Self> {
-                let proto = <$proto_type>::decode(value.as_slice())?;
+            fn try_from(val: Vec<u8>) -> Result<Self> {
+                let proto = <$proto_type>::decode(val.as_slice())?;
                 <$target_type>::try_from(proto)
             }
         }

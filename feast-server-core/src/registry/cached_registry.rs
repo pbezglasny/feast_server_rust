@@ -8,6 +8,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use google_cloud_storage::client::{Client as GcsClient, ClientConfig};
 use prost::Message;
 use rustc_hash::FxHashMap as HashMap;
+use std::future::Future;
 use std::ops::Add;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -224,9 +225,9 @@ fn start_refresh_task<F, Fut>(
 
 #[async_trait]
 impl FeatureRegistryService for CachedFileRegistry {
-    async fn request_to_view_keys<'a>(
-        &'a self,
-        request: RequestedFeatures<'a>,
+    async fn request_to_view_keys(
+        &self,
+        request: RequestedFeatures,
     ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
         if self
             .created_at
