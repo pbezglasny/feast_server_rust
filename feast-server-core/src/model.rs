@@ -513,7 +513,6 @@ impl Feature<String> {
     }
 
     pub fn from_names(feature_view_name: &str, feature_name: &str) -> Self {
-        let rodeo = rodeo_ref();
         Self::new(feature_view_name.to_string(), feature_name.to_string())
     }
 
@@ -797,7 +796,6 @@ impl TryFrom<FeatureServiceProto> for FeatureService {
 impl TryFrom<RegistryProto> for FeatureRegistry {
     type Error = Error;
     fn try_from(registry_proto: RegistryProto) -> Result<Self> {
-        let rodeo = rodeo_ref();
         let entities: Result<HashMap<String, Entity>> = registry_proto
             .entities
             .into_iter()
