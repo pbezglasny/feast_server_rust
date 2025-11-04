@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use google_cloud_storage::client::{Client as GcsClient, ClientConfig};
+use lasso::Spur;
 use prost::Message;
 use rustc_hash::FxHashMap as HashMap;
 use std::future::Future;
@@ -228,7 +229,7 @@ impl FeatureRegistryService for CachedFileRegistry {
     async fn request_to_view_keys(
         &self,
         request: RequestedFeatures,
-    ) -> Result<HashMap<Feature, Arc<FeatureView>>> {
+    ) -> Result<HashMap<Feature<Spur>, Arc<FeatureView>>> {
         if self
             .created_at
             .load()
@@ -251,9 +252,8 @@ mod tests {
     async fn read_registry_from_s3() -> anyhow::Result<()> {
         let bucket_url = "s3://feast-rust-feature-registry/registry.db".to_string();
         let s3_registry = super::CachedFileRegistry::new_s3(bucket_url, None).await?;
-        let mut request_obj = GetOnlineFeaturesRequest::default();
-        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
-        let requested_features = RequestedFeatures::from(&request_obj);
+        let requested_features =
+            RequestedFeatures::from(vec!["driver_hourly_stats_fresh:conv_rate".to_string()]);
         let result = s3_registry.request_to_view_keys(requested_features).await?;
         println!("{:#?}", result);
         Ok(())
@@ -264,9 +264,8 @@ mod tests {
     async fn read_registry_from_gcs() -> anyhow::Result<()> {
         let bucket_url = "gs://feast-rust-feature-registry/registry.db".to_string();
         let gcs_registry = super::CachedFileRegistry::new_gcs(bucket_url, None).await?;
-        let mut request_obj = GetOnlineFeaturesRequest::default();
-        request_obj.features = vec!["driver_hourly_stats_fresh:conv_rate".to_string()].into();
-        let requested_features = RequestedFeatures::from(&request_obj);
+        let requested_features =
+            RequestedFeatures::from(vec!["driver_hourly_stats_fresh:conv_rate".to_string()]);
         let result = gcs_registry
             .request_to_view_keys(requested_features)
             .await?;

@@ -1,4 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
+use lasso::Spur;
 use rustc_hash::FxHashMap as HashMap;
 use tokio::runtime::Runtime;
 
@@ -9,7 +10,7 @@ use common::online_store;
 use feast_server_core::feast::types::value_type::Enum::Int64;
 use feast_server_core::intern::rodeo_ref;
 use feast_server_core::model::EntityIdValue::Int;
-use feast_server_core::model::{RequestedEntityKey, Feature, JoinKeyValue};
+use feast_server_core::model::{Feature, JoinKeyValue, RequestedEntityKey};
 
 fn build_entity_keys() -> Vec<RequestedEntityKey> {
     [1005_i64, 1002, 2003]
@@ -32,14 +33,14 @@ fn bench_onlinestore(c: &mut Criterion) {
     let entity_keys = build_entity_keys();
     let feature_names = vec!["conv_rate", "acc_rate"];
 
-    let arg: HashMap<RequestedEntityKey, Vec<Feature>> = entity_keys
+    let arg: HashMap<RequestedEntityKey, Vec<Feature<Spur>>> = entity_keys
         .into_iter()
         .map(|key| {
             (
                 key,
                 feature_names
                     .iter()
-                    .map(|feature| Feature::from_names("driver_hourly_stats", feature))
+                    .map(|feature| Feature::<Spur>::from_names("driver_hourly_stats", feature))
                     .collect(),
             )
         })
