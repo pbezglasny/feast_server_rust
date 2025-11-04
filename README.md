@@ -24,8 +24,7 @@ Supported online stores:
 
 ## Implementation details
 
-Internally, interned string are being used for better performance. 
-Theoretical it could lead to out of memory, but in standard use case this should not be the problem.
+Theoretically, it could lead to out of memory, but for standard use cases, this should not be an issue.
 
 ## Test server
 
