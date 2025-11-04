@@ -17,7 +17,7 @@ fn bench_registry(c: &mut Criterion) {
             let registry = registry.clone();
             let request = request.clone();
             async move {
-                let requested_features = RequestedFeatures::from(&request);
+                let requested_features = RequestedFeatures::from(request.features.unwrap());
                 let result = registry
                     .request_to_view_keys(requested_features)
                     .await

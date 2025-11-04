@@ -3,6 +3,7 @@
 use crate::model::{Feature, FeatureView, GetOnlineFeaturesRequest, RequestedFeatures};
 use anyhow::Result;
 use async_trait::async_trait;
+use lasso::Spur;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 
@@ -20,5 +21,5 @@ pub trait FeatureRegistryService: Send + Sync {
     async fn request_to_view_keys(
         &self,
         request: RequestedFeatures,
-    ) -> Result<HashMap<Feature, Arc<FeatureView>>>;
+    ) -> Result<HashMap<Feature<Spur>, Arc<FeatureView>>>;
 }

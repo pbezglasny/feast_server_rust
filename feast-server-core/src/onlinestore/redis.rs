@@ -1,7 +1,7 @@
 use crate::config::{OnlineStoreConfig, RedisType};
 use crate::feast::types::{EntityKey, Value as FeastValue};
 use crate::intern;
-use crate::model::{RequestedEntityKey, Feature};
+use crate::model::{Feature, RequestedEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -24,7 +24,7 @@ use smallvec::SmallVec;
 use std::hash::Hash;
 use std::sync::Arc;
 
-fn feature_redis_key(feature: &Feature) -> Result<Vec<u8>> {
+fn feature_redis_key(feature: &Feature<Spur>) -> Result<Vec<u8>> {
     let rodeo = intern::rodeo_ref();
     let feature_view_name = rodeo.resolve(&feature.feature_view_name);
     let feature_name = rodeo.resolve(&feature.feature_name);
@@ -487,7 +487,7 @@ where
 {
     async fn get_feature_values(
         &self,
-        features: HashMap<RequestedEntityKey, Vec<Feature>>,
+        features: HashMap<RequestedEntityKey, Vec<Feature<Spur>>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut entities: Vec<RedisRequest> = vec![];
 
@@ -606,9 +606,10 @@ mod tests {
     use super::new;
     use crate::feast::types::value_type::Enum::Int64;
     use crate::intern::rodeo_ref;
-    use crate::model::{EntityIdValue, RequestedEntityKey, Feature, JoinKeyValue};
+    use crate::model::{EntityIdValue, Feature, JoinKeyValue, RequestedEntityKey};
     use crate::onlinestore::OnlineStore;
     use anyhow::Result;
+    use lasso::Spur;
     use redis::aio::ConnectionManager;
     use rustc_hash::FxHashMap as HashMap;
 
@@ -641,8 +642,8 @@ mod tests {
                 }],
             },
             vec![
-                Feature::from_names("driver_hourly_stats", "conv_rate"),
-                Feature::from_names("driver_hourly_stats", "acc_rate"),
+                Feature::<Spur>::from_names("driver_hourly_stats", "conv_rate"),
+                Feature::<Spur>::from_names("driver_hourly_stats", "acc_rate"),
             ],
         )]);
 

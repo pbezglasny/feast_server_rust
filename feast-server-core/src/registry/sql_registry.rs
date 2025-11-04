@@ -124,7 +124,7 @@ impl SqlFeatureRegistry {
             name_col: &'a str,
             proto_col: &'a str,
             type_name: &'a str,
-        ) -> Result<HashMap<Spur, T>>
+        ) -> Result<HashMap<String, T>>
         where
             T: TryFrom<Vec<u8>, Error = anyhow::Error>,
         {
@@ -149,7 +149,7 @@ impl SqlFeatureRegistry {
                                 e
                             )
                         })
-                        .map(|item| (rodeo.get_or_intern(name), item))
+                        .map(|item| (name, item))
                 })
                 .collect::<Result<HashMap<_, _>>>()
         }

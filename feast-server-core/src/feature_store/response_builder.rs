@@ -18,11 +18,11 @@ static DUMMY_ENTITY_ID_SPUR: std::sync::LazyLock<Spur> =
     std::sync::LazyLock::new(|| intern::rodeo_ref().get_or_intern(DUMMY_ENTITY_ID));
 
 #[derive(Debug, Clone)]
-struct ResponseFeatureRow(Feature, Value, FeatureStatus, DateTime<Utc>);
+struct ResponseFeatureRow(Feature<Spur>, Value, FeatureStatus, DateTime<Utc>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedFeature {
-    pub feature: Feature,
+    pub feature: Feature<Spur>,
     pub feature_type: FeatureType,
 }
 
@@ -37,11 +37,11 @@ impl From<FeatureWithKeys> for TypedFeature {
 
 #[derive(Hash, PartialEq, Eq)]
 struct FeatureRef<'a> {
-    feature: &'a Feature,
+    feature: &'a Feature<Spur>,
 }
 
-impl<'a> From<&'a Feature> for FeatureRef<'a> {
-    fn from(feature: &'a Feature) -> Self {
+impl<'a> From<&'a Feature<Spur>> for FeatureRef<'a> {
+    fn from(feature: &'a Feature<Spur>) -> Self {
         Self { feature }
     }
 }
@@ -94,7 +94,7 @@ struct GetOnlineFeatureResponseBuilder {
     num_values: usize,
     features: Vec<Spur>,
     results: Vec<FeatureResults>,
-    feature_to_idx: HashMap<Feature, usize>,
+    feature_to_idx: HashMap<Feature<Spur>, usize>,
 }
 
 impl GetOnlineFeatureResponseBuilder {
@@ -145,7 +145,7 @@ impl GetOnlineFeatureResponseBuilder {
 
     fn ensure_feature_slot(
         &mut self,
-        feature: &Feature,
+        feature: &Feature<Spur>,
         value_count: usize,
         is_entity_less: bool,
     ) -> usize {
@@ -179,7 +179,7 @@ impl GetOnlineFeatureResponseBuilder {
 
     fn add_entity_less_feature(
         &mut self,
-        feature: Feature,
+        feature: Feature<Spur>,
         value: Value,
         status: FeatureStatus,
         event_ts: DateTime<Utc>,
@@ -192,13 +192,18 @@ impl GetOnlineFeatureResponseBuilder {
         });
     }
 
-    fn add_missing_feature(&mut self, feature: Feature, value_count: usize, is_entity_less: bool) {
+    fn add_missing_feature(
+        &mut self,
+        feature: Feature<Spur>,
+        value_count: usize,
+        is_entity_less: bool,
+    ) {
         let feature_name = self.format_feature_name(&feature, is_entity_less);
         self.features.push(feature_name);
         self.push_empty_values(value_count);
     }
 
-    fn format_feature_name(&self, feature: &Feature, is_entity_less: bool) -> Spur {
+    fn format_feature_name(&self, feature: &Feature<Spur>, is_entity_less: bool) -> Spur {
         let rodeo = intern::rodeo_ref();
         if self.full_feature_names && !is_entity_less {
             rodeo.get_or_intern(format!(
@@ -241,7 +246,7 @@ impl GetOnlineFeatureResponse {
         rows: Vec<OnlineStoreRow>,
         feature_views: HashMap<Spur, Arc<FeatureView>>,
         lookup_mapping: HashMap<EntityColumnRef, Spur>,
-        mut feature_set: HashSet<Feature>,
+        mut feature_set: HashSet<Feature<Spur>>,
         full_feature_names: bool,
     ) -> Result<Self> {
         let rodeo = intern::rodeo_ref();
@@ -322,7 +327,7 @@ impl GetOnlineFeatureResponse {
                 value: value.clone(),
             };
 
-            let feature = Feature::new(entity_col_ref.view_name, feature_name);
+            let feature = Feature::<Spur>::new(entity_col_ref.view_name, feature_name);
             let status = get_feature_status(
                 &feature_value,
                 feature_views.get(&entity_col_ref.view_name).cloned(),
@@ -431,10 +436,12 @@ mod tests {
 
         feature_views.insert(feature.name, feature);
 
-        let features: HashSet<Feature> =
-            vec![Feature::from_names("driver_hourly_stats", "acc_rate")]
-                .into_iter()
-                .collect();
+        let features: HashSet<Feature<Spur>> = vec![Feature::<Spur>::from_names(
+            "driver_hourly_stats",
+            "acc_rate",
+        )]
+        .into_iter()
+        .collect();
 
         let lookup_mapping: HashMap<EntityColumnRef, Spur> = vec![(
             EntityColumnRef::new(

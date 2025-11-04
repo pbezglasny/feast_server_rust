@@ -3,7 +3,7 @@ use crate::feast::types::{EntityKey, Value};
 use crate::intern;
 use crate::key_serialization::deserialize_key;
 use crate::key_serialization::serialize_key;
-use crate::model::{RequestedEntityKey, Feature};
+use crate::model::{Feature, RequestedEntityKey};
 use crate::onlinestore::{OnlineStore, OnlineStoreRow};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -109,7 +109,7 @@ pub struct SqliteOnlineStore {
 impl OnlineStore for SqliteOnlineStore {
     async fn get_feature_values(
         &self,
-        features: HashMap<RequestedEntityKey, Vec<Feature>>,
+        features: HashMap<RequestedEntityKey, Vec<Feature<Spur>>>,
     ) -> Result<Vec<OnlineStoreRow>> {
         let mut view_to_keys: HashMap<Spur, HashSet<Vec<u8>>> = HashMap::default();
         let mut view_features: HashMap<Spur, HashSet<Spur>> = HashMap::default();
@@ -247,7 +247,7 @@ mod test {
         let project_dir = env!("CARGO_MANIFEST_DIR");
         let sqlite_path = format!("{}/test_data/online_store.db", project_dir);
 
-        let arg: HashMap<RequestedEntityKey, Vec<Feature>> = HashMap::from_iter([(
+        let arg: HashMap<RequestedEntityKey, Vec<Feature<Spur>>> = HashMap::from_iter([(
             RequestedEntityKey {
                 join_keys: vec![JoinKeyValue {
                     join_key: rodeo_ref().get_or_intern("driver_id"),
@@ -255,7 +255,10 @@ mod test {
                     value_type: Int64,
                 }],
             },
-            vec![Feature::from_names("driver_hourly_stats", "conv_rate")],
+            vec![Feature::<Spur>::from_names(
+                "driver_hourly_stats",
+                "conv_rate",
+            )],
         )]);
 
         let sqlite_store = SqliteOnlineStore::from_options(
