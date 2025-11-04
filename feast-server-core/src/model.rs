@@ -176,7 +176,7 @@ pub struct Field {
 
 impl Field {
     pub fn new(name: impl AsRef<str>, value_type: ValueTypeEnum) -> Self {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         Self {
             name: rodeo.get_or_intern(name.as_ref()),
             value_type,
@@ -210,7 +210,7 @@ pub struct FeatureView {
 impl Default for FeatureView {
     fn default() -> Self {
         Self {
-            name: crate::intern::rodeo_ref().get_or_intern(""),
+            name: rodeo_ref().get_or_intern(""),
             features: Arc::new(Vec::new()),
             ttl: Duration::zero(),
             entity_names: Vec::new(),
@@ -230,7 +230,7 @@ impl FeatureView {
         join_key_map: Option<HashMap<Spur, Spur>>,
     ) -> Self {
         Self {
-            name: crate::intern::rodeo_ref().get_or_intern(name.as_ref()),
+            name: rodeo_ref().get_or_intern(name.as_ref()),
             features: Arc::new(features),
             ttl,
             entity_names,
@@ -578,7 +578,7 @@ impl TryFrom<&str> for Feature<Spur> {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         if s.is_empty() {
             return Err(anyhow!("Empty feature string"));
         }
@@ -645,7 +645,7 @@ impl TryFrom<EntityProto> for Entity {
     type Error = Error;
 
     fn try_from(entity_proto: EntityProto) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         let specs = entity_proto.spec.ok_or(anyhow!("Missing entity specs"))?;
         let value_type = ValueTypeEnum::try_from(specs.value_type).map_err(|e| {
             anyhow!(
@@ -667,7 +667,7 @@ impl TryFrom<FeatureSpecV2Proto> for Field {
     type Error = Error;
 
     fn try_from(feature_spec_proto: FeatureSpecV2Proto) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         let value_type = ValueTypeEnum::try_from(feature_spec_proto.value_type).map_err(|e| {
             anyhow!(
                 "Invalid value type {} for feature {}: {}",
@@ -684,7 +684,7 @@ impl TryFrom<FeatureSpecV2Proto> for Field {
 impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
     type Error = Error;
     fn try_from(projection_proto: FeatureViewProjectionProto) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         let features: Result<Vec<Field>> = projection_proto
             .feature_columns
             .into_iter()
@@ -707,7 +707,7 @@ impl TryFrom<FeatureViewProjectionProto> for FeatureProjection {
 
 impl FeatureView {
     pub fn is_entity_less(&self) -> bool {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         self.entity_names.len() == 1
             && self.entity_names[0] == rodeo.get_or_intern(DUMMY_ENTITY_NAME)
     }
@@ -716,7 +716,7 @@ impl FeatureView {
 impl TryFrom<FeatureViewProto> for FeatureView {
     type Error = Error;
     fn try_from(feature_view_proto: FeatureViewProto) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         let spec = feature_view_proto
             .spec
             .ok_or(anyhow!("Missing feature view value"))?;
@@ -750,7 +750,7 @@ impl TryFrom<FeatureViewProto> for FeatureView {
 impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
     type Error = Error;
     fn try_from(odfv_proto: OnDemandFeatureViewProto) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         let spec = odfv_proto
             .spec
             .ok_or(anyhow!("Missing on-demand feature view specs"))?;
@@ -764,7 +764,7 @@ impl TryFrom<OnDemandFeatureViewProto> for OnDemandFeatureView {
 impl TryFrom<FeatureServiceProto> for FeatureService {
     type Error = Error;
     fn try_from(feature_service_proto: FeatureServiceProto) -> Result<Self> {
-        let rodeo = crate::intern::rodeo_ref();
+        let rodeo = rodeo_ref();
         let spec = feature_service_proto
             .spec
             .ok_or(anyhow!("Missing feature service specs"))?;
