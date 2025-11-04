@@ -18,6 +18,15 @@ Supported online stores:
 
 - Sqlite.
 - Redis
+  - available redis modes: single node, cluster, sentinel
+  - available config option can be seen in code [here](./feast-server-core/src/onlinestore/redis.rs:181)
+  - supported tls connection
+  - some features need to be tested
+
+## Implementation details
+
+Internally, interned string are being used for better performance. 
+Theoretical it could lead to out of memory, but in standard use case this should not be the problem.
 
 ## Test server
 
